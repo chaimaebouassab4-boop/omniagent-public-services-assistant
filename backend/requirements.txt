@@ -1,6 +1,13 @@
-@"
+# Core API
 fastapi
 uvicorn
 pydantic
 python-multipart
-"@ | Set-Content backend/requirements.txt
+
+# RAG & AI (Ayoub's part)
+llama-index
+chromadb
+llama-index-vector-stores-chroma
+llama-index-llms-ollama
+llama-index-embeddings-huggingface
+sentence-transformers

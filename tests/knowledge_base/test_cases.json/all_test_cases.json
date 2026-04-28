@@ -1,0 +1,92 @@
+[
+  {
+    "query": "شنو الوثائق المطلوبة لشهادة السكنى إلا كنت مستأجر؟",
+    "expected_answer": "عقد الكراء مصادق عليه، نسخة CNIE، فاتورة حديثة باسم صاحب السكن أو توصيل كراء، تصريح بالشرف إلا لزم، طوابع 20 درهم.",
+    "service_type": "residence",
+    "category": "documents"
+  },
+  {
+    "query": "كم الرسوم ديال شهادة السكنى؟",
+    "expected_answer": "حوالي 20 درهم (طوابع ضريبية).",
+    "service_type": "residence",
+    "category": "fees"
+  },
+  {
+    "query": "هل خاص المقدم يجي يزور الدار باش يعطي شهادة السكنى؟",
+    "expected_answer": "نعم، في أغلب الحالات خاصة القروي أو سكن مع عائلة، يقوم المقدم أو الشرطة بمعاينة ميدانية.",
+    "service_type": "residence",
+    "category": "procedure"
+  },
+  {
+    "query": "كيفاش نطلب عقد الازدياد أونلاين؟",
+    "expected_answer": "عبر المنصة الرسمية watiqa.ma: تسجل، تختار Extrait أو Copie intégrale، تدخل البيانات (CIN، تاريخ الازدياد، أسماء الوالدين)، تدفع، ويوصلك بالبريد.",
+    "service_type": "birth",
+    "category": "procedure_online"
+  },
+  {
+    "query": "شنو الفرق بين المستخرج والنسخة الكاملة ديال عقد الازدياد؟",
+    "expected_answer": "المستخرج (Extrait): معلومات أساسية فقط. النسخة الكاملة (Copie intégrale): كل التفاصيل مع الهوامش والتعديلات.",
+    "service_type": "birth",
+    "category": "types"
+  },
+  {
+    "query": "كم مدة الاستلام إلا طلب عقد الازدياد أونلاين؟",
+    "expected_answer": "عادة 4-15 يوم عمل حسب العنوان والمنطقة، يمكن تتبع الطلب في watiqa.ma.",
+    "service_type": "birth",
+    "category": "timeline"
+  },
+  {
+    "query": "شنو الوثائق المطلوبة لعقد الزواج؟",
+    "expected_answer": "نسخة كاملة من عقد الازدياد، CNIE، شهادة طبية، شهادة عزوبية أو طلاق، صور شمسية، طوابع، موافقة الولي للمرأة البكر، إذن قضائي إلا تعدد زوجات.",
+    "service_type": "marriage",
+    "category": "documents"
+  },
+  {
+    "query": "كم الرسوم ديال عقد الزواج؟",
+    "expected_answer": "متفاوتة: 200-500 درهم لأتعاب العدول + طوابع + مصاريف إدارية، قد تزيد في حالات خاصة.",
+    "service_type": "marriage",
+    "category": "fees"
+  },
+  {
+    "query": "خاص الولي للمرأة في عقد الزواج؟",
+    "expected_answer": "نعم للبكر، إلا إذن قضائي. الولي غالباً الأب أو الجد أو الأخ.",
+    "service_type": "marriage",
+    "category": "conditions"
+  },
+  {
+    "query": "شنو السن القانوني للزواج في المغرب؟",
+    "expected_answer": "18 سنة كاملة للطرفين، إلا إذن استثنائي من قاضي الأسرة.",
+    "service_type": "marriage",
+    "category": "conditions"
+  },
+  {
+    "query": "هل يمكن طلب شهادة السكنى أونلاين؟",
+    "expected_answer": "لا، حالياً (2026) الإجراء حضوري فقط في الملحقة أو القيادة.",
+    "service_type": "residence",
+    "category": "procedure"
+  },
+  {
+    "query": "إلا الاسم في عقد الازدياد غلط، شنو نعمل؟",
+    "expected_answer": "تقدم طلب تصحيح في المحكمة الابتدائية مع وثائق إثبات، ثم تعيد طلب النسخة المصححة.",
+    "service_type": "birth",
+    "category": "errors"
+  },
+  {
+    "query": "هل يمكن تعدد الزوجات في المغرب؟",
+    "expected_answer": "نعم بشروط صارمة: إذن قضائي + موافقة الزوجة الأولى + إثبات القدرة المالية والعادلة.",
+    "service_type": "marriage",
+    "category": "conditions"
+  },
+  {
+    "query": "فين نروح نبداو عقد الزواج في طنجة؟",
+    "expected_answer": "عند عدول معتمدين، ثم قاضي الأسرة في المحكمة الابتدائية التابعة لمنطقتك.",
+    "service_type": "marriage",
+    "category": "location"
+  },
+  {
+    "query": "شنو نعمل إلا ما عنديش فاتورة لشهادة السكنى؟",
+    "expected_answer": "قدم تصريح بالشرف من صاحب السكن + CNIE ديالو + فاتورة باسمه، وغالباً يطلبون زيارة ميدانية.",
+    "service_type": "residence",
+    "category": "documents"
+  }
+]
