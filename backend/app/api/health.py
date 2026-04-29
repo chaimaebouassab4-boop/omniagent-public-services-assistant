@@ -1,10 +1,9 @@
-@"
 from fastapi import APIRouter
 
-router = APIRouter()
+router = APIRouter(tags=["health"])
 
-@router.get("/")
-def health_check():
+
+@router.get("/health")
+def health_check() -> dict:
+    """Simple liveness endpoint."""
     return {"status": "ok"}
-"@ | Set-Content backend/app/api/health.py
-     

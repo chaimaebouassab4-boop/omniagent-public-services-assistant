@@ -1,14 +1,37 @@
-@"
 from fastapi import FastAPI
-from app.api import chat, cases, health
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="OMNIAGENT Government Assistant")
+from app.api import cases, chat, health
+from app.core.config import settings
+from app.core.seed_services import seed_services
+from app.db.database import Base, SessionLocal, engine
 
-app.include_router(chat.router, prefix="/chat")
-app.include_router(cases.router, prefix="/cases")
-app.include_router(health.router, prefix="/health")
+app = FastAPI(title=settings.app_name, version=settings.app_version)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+app.include_router(cases.router)
+app.include_router(chat.router)
+app.include_router(health.router)
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    """Create DB tables and seed service definitions."""
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        seed_services(db)
+    finally:
+        db.close()
+
 
 @app.get("/")
-def root():
-    return {"message": "OMNIAGENT API is running"}
-"@ | Set-Content backend/main.py
+async def root() -> dict:
+    return {"message": "Omniagent Public Services API"}
