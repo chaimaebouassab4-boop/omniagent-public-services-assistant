@@ -113,12 +113,12 @@ export function ChatPage(): JSX.Element {
           id: crypto.randomUUID(),
           caseId: outgoing.caseId,
           sender: "assistant",
-          body: "Ma t9drtch nwssel lknowledge base daba. 3awed men ba3d chwia.",
+          body: "Ma l9it-sh lbackend dyal lchat daba. Chghal server w 3awed jarrab.",
           createdAt: new Date().toISOString(),
           status: "sent",
           pending: false
         });
-        toast.error("Backend chat unavailable");
+        toast.error("Chat backend offline");
       } finally {
         markMessageRead(outgoing.id);
         setTyping(false);

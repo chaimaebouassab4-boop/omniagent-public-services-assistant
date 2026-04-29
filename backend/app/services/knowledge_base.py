@@ -1,4 +1,5 @@
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -10,23 +11,27 @@ KB_ROOT = PROJECT_ROOT / "tests" / "knowledge_base"
 SERVICE_KB_PATHS = {
     "birth_certificate": KB_ROOT / "birth" / "birth_certificate.json",
     "residence_certificate": KB_ROOT / "residence" / "residence_certificate.json",
-    "marriage_contract": KB_ROOT / "common" / "faq.json"
+    "marriage_contract": KB_ROOT / "marriage" / "marriage_certificate.json",
 }
 
 COMMON_KB_PATH = KB_ROOT / "common" / "faq.json"
 
 SERVICE_ALIASES = {
     "birth": "birth_certificate",
+    "birth_certificate": "birth_certificate",
     "naissance": "birth_certificate",
     "residence": "residence_certificate",
+    "residence_certificate": "residence_certificate",
     "certificat_residence": "residence_certificate",
     "marriage": "marriage_contract",
-    "mariage": "marriage_contract"
+    "marriage_certificate": "marriage_contract",
+    "marriage_contract": "marriage_contract",
+    "mariage": "marriage_contract",
 }
 
 
 def normalize_service_id(service_id: str | None) -> str | None:
-    """Normalizes route aliases to canonical service ids."""
+    """Normalize route aliases to canonical service ids."""
     if not service_id:
         return None
     lower = service_id.strip().lower()
@@ -35,7 +40,7 @@ def normalize_service_id(service_id: str | None) -> str | None:
 
 @lru_cache(maxsize=8)
 def load_service_knowledge(service_id: str) -> dict[str, Any]:
-    """Loads JSON knowledge for one service."""
+    """Load JSON knowledge for one service."""
     canonical = normalize_service_id(service_id)
     if not canonical:
         return {}
@@ -51,7 +56,7 @@ def load_service_knowledge(service_id: str) -> dict[str, Any]:
 
 @lru_cache(maxsize=2)
 def load_common_knowledge() -> dict[str, Any]:
-    """Loads shared FAQ fallback knowledge."""
+    """Load shared FAQ fallback knowledge when available."""
     if not COMMON_KB_PATH.exists():
         return {}
     try:
@@ -61,14 +66,48 @@ def load_common_knowledge() -> dict[str, Any]:
         return {}
 
 
+def _tokenize(text: str) -> set[str]:
+    """Extract lowercase word tokens while ignoring punctuation and quotes."""
+    return {
+        token
+        for token in re.findall(r"\w+", text.lower(), flags=re.UNICODE)
+        if len(token) > 1
+    }
+
+
 def _score_match(query: str, question: str) -> int:
-    query_tokens = {token for token in query.lower().split() if len(token) > 1}
-    question_tokens = {token for token in question.lower().split() if len(token) > 1}
-    return len(query_tokens.intersection(question_tokens))
+    return len(_tokenize(query).intersection(_tokenize(question)))
+
+
+def _answer_marriage_fallback(user_message: str, knowledge: dict[str, Any]) -> str | None:
+    """Handle common marriage questions even when FAQ text quality is poor."""
+    lowered_message = user_message.lower()
+
+    if "سن" in user_message or "age" in lowered_message:
+        return "Ssen l9anouni lizzwaj f lmaghrib howa 18 3am ljouj. Ila kan chi wa7ed asghar, kaykhas idn istithna2i mn qadi l2osra."
+
+    if any(term in user_message for term in ["رسوم", "ثمن"]) or any(
+        term in lowered_message for term in ["prix", "fee", "fees", "cost"]
+    ):
+        return "Rsom 3a9d zwaj kaykouno ghaliban bin 200 w 500 dirham, 7asab l3doul w tomboilat w masarif idariya. F بعض l7alat momkin ytl3 aktar."
+
+    if "online" in lowered_message or "أونلاين" in user_message or "اونلاين" in user_message:
+        return "La, 3a9d zwaj ma kaytddarsh kamel online. Lmassar kaykoun 7odori 3بر l3doul w qadi l2osra."
+
+    if any(term in user_message for term in ["وثائق", "الوثائق", "مدارك", "watha2iq", "documents"]):
+        required = knowledge.get("required_documents")
+        if isinstance(required, dict):
+            docs = required.get("common_to_both", [])
+            if docs:
+                docs_preview = "\n".join(f"- {doc}" for doc in docs[:4])
+                return f"Hadi awel watha2iq lli khassek ghaliban:\n{docs_preview}"
+
+    return None
 
 
 def answer_from_knowledge(service_id: str, user_message: str) -> str:
-    """Returns best answer from FAQ, then summary fallback."""
+    """Return best answer from FAQ, then structured fallbacks."""
+    canonical_service_id = normalize_service_id(service_id)
     knowledge = load_service_knowledge(service_id)
     if not knowledge:
         knowledge = load_common_knowledge()
@@ -90,15 +129,28 @@ def answer_from_knowledge(service_id: str, user_message: str) -> str:
         if answer:
             return answer
 
+    if canonical_service_id == "marriage_contract":
+        marriage_fallback = _answer_marriage_fallback(user_message, knowledge)
+        if marriage_fallback:
+            return marriage_fallback
+
+    lowered_message = user_message.lower()
+    fees = knowledge.get("fees")
+    if isinstance(fees, str) and any(
+        term in lowered_message for term in ["رسوم", "ثمن", "prix", "fee", "fees", "cost"]
+    ):
+        return fees
+
     required = knowledge.get("required_documents")
     if isinstance(required, dict):
-        common_docs = required.get("common_to_all", [])
-        if common_docs:
-            docs_preview = "\n".join(f"- {doc}" for doc in common_docs[:4])
-            return f"Hadi awel watha2iq lli khassek غالبا:\n{docs_preview}"
+        for key in ("common_to_both", "common_to_all"):
+            docs = required.get(key, [])
+            if docs:
+                docs_preview = "\n".join(f"- {doc}" for doc in docs[:4])
+                return f"Hadi awel watha2iq lli khassek ghaliban:\n{docs_preview}"
     if isinstance(required, list) and required:
         docs_preview = "\n".join(f"- {doc}" for doc in required[:4])
-        return f"Hadi awel watha2iq lli khassek غالبا:\n{docs_preview}"
+        return f"Hadi awel watha2iq lli khassek ghaliban:\n{docs_preview}"
 
     description = knowledge.get("description_ar") or knowledge.get("description") or ""
     if description:

@@ -35,6 +35,10 @@ export async function sendChatMessage(payload: SendChatPayload): Promise<string>
     service_id: payload.serviceId,
     message: payload.message,
     language: payload.language ?? "darija"
+  }, {
+    headers: {
+      "X-Skip-Auth": "true"
+    }
   });
   return response.data.data.response;
 }

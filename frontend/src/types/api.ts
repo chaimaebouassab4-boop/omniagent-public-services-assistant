@@ -1,6 +1,6 @@
 export type CaseStatus = "Submitted" | "Approved" | "Rejected";
 
-export type ServiceType = "licence" | "permit" | "residence" | "birth";
+export type ServiceType = "licence" | "permit" | "residence" | "birth" | "marriage";
 
 export interface ApiSuccess<T> {
   data: T;

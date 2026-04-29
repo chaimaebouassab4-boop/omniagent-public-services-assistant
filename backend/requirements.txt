@@ -1,6 +1,7 @@
-@"
 fastapi
 uvicorn
 pydantic
+pydantic-settings
 python-multipart
-"@ | Set-Content backend/requirements.txt
+sqlalchemy
+python-jose

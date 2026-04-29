@@ -11,7 +11,8 @@ const icons = {
   licence: Building2,
   permit: Landmark,
   residence: Home,
-  birth: FileCheck2
+  birth: FileCheck2,
+  marriage: FileCheck2
 };
 
 const localCardContent = {
@@ -42,6 +43,13 @@ const localCardContent = {
     description: "Khrej noskha men rasm l'izdiyad bla ta3qid.",
     accent: "from-[#b45309] to-[#7c2d12]",
     sketch: "📜"
+  },
+  marriage: {
+    title: "3a9d Zawaj",
+    titleAr: "Ø¹Ù‚Ø¯ Ø§Ù„Ø²ÙˆØ§Ø¬",
+    description: "T3raf lmassar w lwatha2iq dyal 3a9d zwaj b wodo7.",
+    accent: "from-[#a21caf] to-[#7e22ce]",
+    sketch: "ðŸ’"
   }
 };
 
@@ -113,6 +121,9 @@ export function HomePage(): JSX.Element {
           {services.map((service) => {
             const Icon = icons[service.id];
             const local = localCardContent[service.id];
+            if (!Icon || !local) {
+              return null;
+            }
             return (
               <Card key={service.id} className="overflow-hidden border-[#dfd1bd] bg-[#fffdfa]">
                 <CardContent className="grid h-full gap-4 p-0">
