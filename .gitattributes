@@ -1,0 +1,13 @@
+# Force LF for text files
+* text=auto eol=lf
+
+# Explicit for common files
+*.py text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.dockerfile text eol=lf
+Dockerfile text eol=lf
