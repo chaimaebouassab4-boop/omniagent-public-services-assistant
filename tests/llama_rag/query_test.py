@@ -5,6 +5,29 @@ import chromadb
 # Force UTF-8 for Windows Terminal
 sys.stdout.reconfigure(encoding='utf-8')
 
+# ---------------------------------------------------------
+# Arabic Terminal Fix (Reshaping + BiDi)
+# ---------------------------------------------------------
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+    CAN_RESHAPE = True
+except ImportError:
+    CAN_RESHAPE = False
+    print("⚠️  لتصحيح الحروف العربية في الـ Terminal، قم بتشغيل:")
+    print("pip install arabic-reshaper python-bidi\n")
+
+def print_arabic(text):
+    if CAN_RESHAPE and isinstance(text, str):
+        # Reshape the text to join Arabic letters
+        reshaped_text = arabic_reshaper.reshape(text)
+        # Apply BiDi algorithm for correct Right-To-Left display
+        bidi_text = get_display(reshaped_text)
+        print(bidi_text)
+    else:
+        print(text)
+# ---------------------------------------------------------
+
 from llama_index.core import VectorStoreIndex, Settings
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.llms.ollama import Ollama
@@ -45,31 +68,44 @@ qe = index.as_query_engine(
     similarity_top_k=3,  # 3 غير كافي مع 10 docs total، يقلل context size
 )
 
-# 6) Tests (بدلي الأسئلة اللي بغيتي)
+# 6) Tests (اختبارات تشمل 10 خدمات)
 questions = [
-    # أسئلة شهادة السكنى
+    # 1. شهادة السكنى (Residence)
     "شنو الوثائق المطلوبة لشهادة السكنى فالمغرب؟",
-    "فين كنقدم طلب شهادة السكنى؟",
-    "شحال كتاخذ من الوقت شهادة السكنى؟",
-    "واش كاين شي رسوم ولا لا؟",
     
-    # أسئلة عقد الازدياد (جديد)
-    "شنو هما الوثائق المطلوبة باش نطلب عقد الازدياد؟",
+    # 2. عقد الازدياد (Birth)
     "كيفاش نخرج عقد الازدياد أونلاين؟",
-    "شحال الثمن ديال عقد الازدياد؟",
-    "واش ممكن نطلب عقد الازدياد فالمقاطعة؟",
     
-    # أسئلة عقد الزواج (جديد)
+    # 3. مستخرج شهادة الوفاة (Death)
+    "من يقدر يصرح بالوفاة وكم الأجل القانوني؟",
+
+    # 4. عقد الزواج (Marriage)
     "شنو الوثائق المطلوبة لعقد الزواج؟",
-    "فين كنصايبو عقد الزواج؟",
-    "شحال كيكلف عقد الزواج فالمغرب؟",
+    
+    # 5. شهادة الحياة (Life)
+    "واش ضروري نحضر شخصيا باش ناخد شهادة الحياة؟",
+
+    # 6. شهادة العزوبة (Single Status)
+    "شنو هما الوثائق المطلوبة لشهادة العزوبة؟",
+
+    # 7. شهادة عدم الملكية (Non-Property)
+    "واش ضروري نمشي لدار الضريبة باش ناخد شهادة عدم الملكية؟",
+
+    # 8. الشهادة الإدارية (Administrative)
+    "واش ضروري المقدم يدير بحث باش يعطيوها ليا؟",
+
+    # 9. شهادة حسن السيرة (Good Conduct)
+    "واش نقدر ناخد شهادة حسن السيرة أونلاين؟",
+
+    # 10. السجل العدلي (Criminal Record)
+    "شنو الفرق بين حسن السيرة والسجل العدلي؟"
 ]
 
 for q in questions:
     print("\n" + "=" * 80)
-    print("Q:", q)
+    print_arabic("Q: " + q)
     try:
         ans = qe.query(q)
-        print("A:", ans)
+        print_arabic("A: " + str(ans))
     except Exception as e:
         print("❌ ERROR:", e)
