@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -9,11 +12,36 @@ from app.core.config import settings
 from app.db.database import get_db
 from app.models import User
 
+PBKDF2_ITERATIONS = 100_000
+
 
 @dataclass
 class TokenPayload:
     sub: str
     is_admin: bool
+
+
+def hash_password(password: str) -> str:
+    """Hashes a password with PBKDF2-SHA256 and a random salt."""
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), PBKDF2_ITERATIONS
+    )
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt}${digest.hex()}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Checks a plaintext password against a stored PBKDF2 hash."""
+    try:
+        scheme, iterations, salt, expected = password_hash.split("$")
+        if scheme != "pbkdf2_sha256":
+            return False
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt.encode("utf-8"), int(iterations)
+        )
+        return hmac.compare_digest(digest.hex(), expected)
+    except (ValueError, AttributeError):
+        return False
 
 
 def create_access_token(user_id: str, is_admin: bool = False, expires_minutes: int = 60) -> str:

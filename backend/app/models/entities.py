@@ -13,6 +13,8 @@ class User(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String, default="")
+    full_name: Mapped[str] = mapped_column(String, default="")
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
 
     cases: Mapped[list["Case"]] = relationship(back_populates="user")
@@ -39,8 +41,15 @@ class Case(Base):
     __tablename__ = "cases"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    # Stable numeric id exposed to the frontend (used in URLs).
+    public_id: Mapped[int] = mapped_column(Integer, unique=True, index=True, autoincrement=True)
+    reference_number: Mapped[str] = mapped_column(String, default="")
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
     service_id: Mapped[str] = mapped_column(String, ForeignKey("services.id"), index=True)
+    applicant_name: Mapped[str] = mapped_column(String, default="")
+    applicant_email: Mapped[str] = mapped_column(String, default="")
+    applicant_phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String, default="submitted")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -77,13 +86,16 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    case_id: Mapped[str] = mapped_column(String, ForeignKey("cases.id"), index=True)
+    # Nullable so standalone chat messages (not tied to a case) can be stored.
+    case_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("cases.id"), index=True, nullable=True
+    )
     sender: Mapped[str] = mapped_column(String)
     message: Mapped[str] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String, default="darija")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    case: Mapped[Case] = relationship(back_populates="chat_messages")
+    case: Mapped[Case | None] = relationship(back_populates="chat_messages")
 
 
 class AuditLog(Base):

@@ -1,0 +1,557 @@
+{
+  "summary": {
+    "total_cases": 45,
+    "passed": 44,
+    "accuracy": 0.978,
+    "average_confidence": 0.912,
+    "per_service": {
+      "administrative": {
+        "cases": 3,
+        "passed": 3,
+        "accuracy": 1.0
+      },
+      "birth": {
+        "cases": 7,
+        "passed": 7,
+        "accuracy": 1.0
+      },
+      "criminal_record": {
+        "cases": 3,
+        "passed": 3,
+        "accuracy": 1.0
+      },
+      "death": {
+        "cases": 3,
+        "passed": 3,
+        "accuracy": 1.0
+      },
+      "good_conduct": {
+        "cases": 3,
+        "passed": 3,
+        "accuracy": 1.0
+      },
+      "life": {
+        "cases": 3,
+        "passed": 3,
+        "accuracy": 1.0
+      },
+      "marriage": {
+        "cases": 9,
+        "passed": 9,
+        "accuracy": 1.0
+      },
+      "non_property": {
+        "cases": 3,
+        "passed": 3,
+        "accuracy": 1.0
+      },
+      "residence": {
+        "cases": 8,
+        "passed": 7,
+        "accuracy": 0.875
+      },
+      "single_status": {
+        "cases": 3,
+        "passed": 3,
+        "accuracy": 1.0
+      }
+    }
+  },
+  "results": [
+    {
+      "kind": "curated",
+      "service": "residence",
+      "category": "documents",
+      "query": "شنو الوثائق المطلوبة لشهادة السكنى إلا كنت مستأجر؟",
+      "expected_answer": "عقد الكراء مصادق عليه، نسخة CNIE، فاتورة حديثة باسم صاحب السكن أو توصيل كراء، تصريح بالشرف إلا لزم، طوابع 20 درهم.",
+      "answer": "اسأل عن سبب الرفض، أكمل الوثائق الناقصة، أو قدم شكوى للجهة العليا (القائد أو الوالي).",
+      "confidence": 0.56,
+      "keyword_recall": 0.048,
+      "passed": false
+    },
+    {
+      "kind": "curated",
+      "service": "residence",
+      "category": "fees",
+      "query": "كم الرسوم ديال شهادة السكنى؟",
+      "expected_answer": "حوالي 20 درهم (طوابع ضريبية).",
+      "answer": "حوالي 20 درهم (طوابع ضريبية). ما فيه رسوم إضافية رسمية في أغلب الحالات.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "residence",
+      "category": "procedure",
+      "query": "هل خاص المقدم يجي يزور الدار باش يعطي شهادة السكنى؟",
+      "expected_answer": "نعم، في أغلب الحالات خاصة القروي أو سكن مع عائلة، يقوم المقدم أو الشرطة بمعاينة ميدانية.",
+      "answer": "نعم، في أغلب الحالات (خاصة القروي أو سكن مع عائلة)، يقوم المقدم أو الشرطة بمعاينة ميدانية.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "birth",
+      "category": "procedure_online",
+      "query": "كيفاش نطلب عقد الازدياد أونلاين؟",
+      "expected_answer": "عبر المنصة الرسمية watiqa.ma: تسجل، تختار Extrait أو Copie intégrale، تدخل البيانات (CIN، تاريخ الازدياد، أسماء الوالدين)، تدفع، ويوصلك بالبريد.",
+      "answer": "نعم، عبر المنصة الرسمية watiqa.ma. تختار Extrait أو Copie intégrale، تدفع، ويوصلك البريد الموصى به.",
+      "confidence": 0.69,
+      "keyword_recall": 0.571,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "birth",
+      "category": "types",
+      "query": "شنو الفرق بين المستخرج والنسخة الكاملة ديال عقد الازدياد؟",
+      "expected_answer": "المستخرج (Extrait): معلومات أساسية فقط. النسخة الكاملة (Copie intégrale): كل التفاصيل مع الهوامش والتعديلات.",
+      "answer": "المستخرج (Extrait): معلومات أساسية فقط. النسخة الكاملة (Copie intégrale): كل التفاصيل مع الهوامش والتعديلات (مطلوبة في بعض الإجراءات مثل الزواج أو الجنسية).",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "birth",
+      "category": "timeline",
+      "query": "كم مدة الاستلام إلا طلب عقد الازدياد أونلاين؟",
+      "expected_answer": "عادة 4-15 يوم عمل حسب العنوان والمنطقة، يمكن تتبع الطلب في watiqa.ma.",
+      "answer": "عادة 4-15 يوم عمل حسب العنوان والمنطقة (يمكن تتبع الطلب في watiqa.ma).",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "marriage",
+      "category": "documents",
+      "query": "شنو الوثائق المطلوبة لعقد الزواج؟",
+      "expected_answer": "نسخة كاملة من عقد الازدياد، CNIE، شهادة طبية، شهادة عزوبية أو طلاق، صور شمسية، طوابع، موافقة الولي للمرأة البكر، إذن قضائي إلا تعدد زوجات.",
+      "answer": "Hadi awel watha2iq lli khassek ghaliban:\n- نسخة كاملة من رسم الولادة (عقد الازدياد) + الأصل للاطلاع\n- نسخة من البطاقة الوطنية للتعريف (CNIE) + الأصل\n- شهادة إدارية للحالة المدنية (شهادة العزوبية أو الطلاق أو الترمل إن وجد)\n- شهادة طبية تثبت السلامة من الأمراض المعدية (من طبيب معتمد)",
+      "confidence": 0.6,
+      "keyword_recall": 0.391,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "marriage",
+      "category": "fees",
+      "query": "كم الرسوم ديال عقد الزواج؟",
+      "expected_answer": "متفاوتة: 200-500 درهم لأتعاب العدول + طوابع + مصاريف إدارية، قد تزيد في حالات خاصة.",
+      "answer": "متفاوتة: 200-500 درهم لأتعاب العدول + طوابع + مصاريف إدارية. قد تزيد في حالات خاصة أو زواج مختلط.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "marriage",
+      "category": "conditions",
+      "query": "خاص الولي للمرأة في عقد الزواج؟",
+      "expected_answer": "نعم للبكر، إلا إذن قضائي. الولي غالباً الأب أو الجد أو الأخ.",
+      "answer": "نعم للبكر، إلا إذن قضائي. الولي غالباً الأب أو الجد أو الأخ.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "marriage",
+      "category": "conditions",
+      "query": "شنو السن القانوني للزواج في المغرب؟",
+      "expected_answer": "18 سنة كاملة للطرفين، إلا إذن استثنائي من قاضي الأسرة.",
+      "answer": "18 سنة كاملة للطرفين. إلا إذن استثنائي من قاضي الأسرة لمن هم أقل.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "residence",
+      "category": "procedure",
+      "query": "هل يمكن طلب شهادة السكنى أونلاين؟",
+      "expected_answer": "لا، حالياً (2026) الإجراء حضوري فقط في الملحقة أو القيادة.",
+      "answer": "لا، حالياً (2026) الإجراء حضوري فقط. بعض المدن الكبرى قد توفر تسهيلات جزئية، لكن التحقق الميداني يبقى ضرورياً.",
+      "confidence": 0.95,
+      "keyword_recall": 0.6,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "birth",
+      "category": "errors",
+      "query": "إلا الاسم في عقد الازدياد غلط، شنو نعمل؟",
+      "expected_answer": "تقدم طلب تصحيح في المحكمة الابتدائية مع وثائق إثبات، ثم تعيد طلب النسخة المصححة.",
+      "answer": "تقدم طلب تصحيح في المحكمة الابتدائية (مع وثائق إثبات)، ثم تعيد طلب النسخة المصححة.",
+      "confidence": 0.54,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "marriage",
+      "category": "conditions",
+      "query": "هل يمكن تعدد الزوجات في المغرب؟",
+      "expected_answer": "نعم بشروط صارمة: إذن قضائي + موافقة الزوجة الأولى + إثبات القدرة المالية والعادلة.",
+      "answer": "نعم بشروط صارمة: إذن قضائي + موافقة الزوجة الأولى + إثبات القدرة المالية والعادلة.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "marriage",
+      "category": "location",
+      "query": "فين نروح نبداو عقد الزواج في طنجة؟",
+      "expected_answer": "عند عدول معتمدين، ثم قاضي الأسرة في المحكمة الابتدائية التابعة لمنطقتك.",
+      "answer": "عند عدول معتمدين (غالباً يساعدون في سحب المطبوع من المحكمة)، ثم قاضي الأسرة في المحكمة الابتدائية.",
+      "confidence": 0.79,
+      "keyword_recall": 0.818,
+      "passed": true
+    },
+    {
+      "kind": "curated",
+      "service": "residence",
+      "category": "documents",
+      "query": "شنو نعمل إلا ما عنديش فاتورة لشهادة السكنى؟",
+      "expected_answer": "قدم تصريح بالشرف من صاحب السكن + CNIE ديالو + فاتورة باسمه، وغالباً يطلبون زيارة ميدانية.",
+      "answer": "قدم تصريح بالشرف من صاحب السكن + CNIE ديالو + فاتورة باسمه. غالباً يطلبون زيارة ميدانية للتأكيد.",
+      "confidence": 0.79,
+      "keyword_recall": 0.929,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "administrative",
+      "category": "faq",
+      "query": "فاش كنحتاج الشهادة الإدارية للزواج؟",
+      "expected_answer": "العدول كيطلبوها مع الملف ديال الزواج باش يثبتو الحالة العائلية ديالك (عازب، مطلق، أو أرمل) انطلاقا من سجلات السلطة المحلية.",
+      "answer": "العدول كيطلبوها مع الملف ديال الزواج باش يثبتو الحالة العائلية ديالك (عازب، مطلق، أو أرمل) انطلاقا من سجلات السلطة المحلية.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "administrative",
+      "category": "faq",
+      "query": "واش ضروري المقدم يدير بحث باش يعطيوها ليا؟",
+      "expected_answer": "نعم، الشهادة الإدارية كاتبنى أساسا على البحث الميداني اللي كيديرو عون السلطة (المقدم) باش يتأكد من المعلومات.",
+      "answer": "نعم، الشهادة الإدارية كاتبنى أساسا على البحث الميداني اللي كيديرو عون السلطة (المقدم) باش يتأكد من المعلومات.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "administrative",
+      "category": "faq",
+      "query": "واش يمكن نصاوبها فمادينة أخرى؟",
+      "expected_answer": "لا، خصك تصاوبها فالمقاطعة اللي تابع ليها محل السكنى ديالك الحالي والمذكور فالبطاقة الوطنية.",
+      "answer": "لا، خصك تصاوبها فالمقاطعة اللي تابع ليها محل السكنى ديالك الحالي والمذكور فالبطاقة الوطنية.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "birth",
+      "category": "faq",
+      "query": "هل يمكن طلب عقد الازدياد أونلاين؟",
+      "expected_answer": "نعم، عبر المنصة الرسمية watiqa.ma. تختار Extrait أو Copie intégrale، تدفع، ويوصلك البريد الموصى به.",
+      "answer": "نعم، عبر المنصة الرسمية watiqa.ma. تختار Extrait أو Copie intégrale، تدفع، ويوصلك البريد الموصى به.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "birth",
+      "category": "faq",
+      "query": "شنو الفرق بين المستخرج والنسخة الكاملة؟",
+      "expected_answer": "المستخرج (Extrait): معلومات أساسية فقط. النسخة الكاملة (Copie intégrale): كل التفاصيل مع الهوامش والتعديلات (مطلوبة في بعض الإجراءات مثل الزواج أو الجنسية).",
+      "answer": "المستخرج (Extrait): معلومات أساسية فقط. النسخة الكاملة (Copie intégrale): كل التفاصيل مع الهوامش والتعديلات (مطلوبة في بعض الإجراءات مثل الزواج أو الجنسية).",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "birth",
+      "category": "faq",
+      "query": "كم الرسوم؟",
+      "expected_answer": "حوالي 10-20 درهم للوثيقة + مصاريف البريد (إجمالي يمكن يوصل 30-55 درهم حسب المنصة والعنوان).",
+      "answer": "حوالي 10-20 درهم للوثيقة + مصاريف البريد (إجمالي يمكن يوصل 30-55 درهم حسب المنصة والعنوان).",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "criminal_record",
+      "category": "faq",
+      "query": "واش نقدر نطلب السجل العدلي من مدينة أخرى؟",
+      "expected_answer": "نعم، عبر البوابة الإلكترونية (casierjudiciaire.justice.gov.ma) يمكن تطلبه وتختار المحكمة القريبة ليك باش تاخدو، بلا ماتمشي لمدينة الازدياد.",
+      "answer": "نعم، عبر البوابة الإلكترونية (casierjudiciaire.justice.gov.ma) يمكن تطلبه وتختار المحكمة القريبة ليك باش تاخدو، بلا ماتمشي لمدينة الازدياد.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "criminal_record",
+      "category": "faq",
+      "query": "شحال ديال الوقت باش يخرج السجل العدلي؟",
+      "expected_answer": "أونلاين كياخد من 24 حتى 48 ساعة باش يوصل للمحكمة لي ختاريتي. إلا كنتي فمكان الازدياد ومشيتي للمحكمة تقدر تاخدو فنفس اليوم.",
+      "answer": "أونلاين كياخد من 24 حتى 48 ساعة باش يوصل للمحكمة لي ختاريتي. إلا كنتي فمكان الازدياد ومشيتي للمحكمة تقدر تاخدو فنفس اليوم.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "criminal_record",
+      "category": "faq",
+      "query": "واش يمكن ليا ناخدو عبر الإيميل؟",
+      "expected_answer": "مؤخرا وزارة العدل بدات خدمة تحميل السجل العدلي مباشرة عبر الإنترنت باستخدام الهوية الرقمية (البطاقة الوطنية الجديدة والتطبيق الذكي).",
+      "answer": "مؤخرا وزارة العدل بدات خدمة تحميل السجل العدلي مباشرة عبر الإنترنت باستخدام الهوية الرقمية (البطاقة الوطنية الجديدة والتطبيق الذكي).",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "death",
+      "category": "faq",
+      "query": "كم الأجل للتصريح بالوفاة؟",
+      "expected_answer": "30 يوماً من تاريخ الوفاة.",
+      "answer": "30 يوماً من تاريخ الوفاة.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "death",
+      "category": "faq",
+      "query": "من يقدر يصرح بالوفاة؟",
+      "expected_answer": "الولد، الزوج/الزوجة، الأب/الأم، الأخ، الجد، أو السلطة المحلية إلا تعذر.",
+      "answer": "الولد، الزوج/الزوجة، الأب/الأم، الأخ، الجد، أو السلطة المحلية إلا تعذر.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "death",
+      "category": "faq",
+      "query": "شنو الوثائق الرئيسية؟",
+      "expected_answer": "شهادة معاينة الوفاة + دفتر العائلي أو عقد ازدياد + CNIE للمتوفى والمصرح.",
+      "answer": "شهادة معاينة الوفاة + دفتر العائلي أو عقد ازدياد + CNIE للمتوفى والمصرح.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "good_conduct",
+      "category": "faq",
+      "query": "واش نقدر ناخد شهادة حسن السيرة أونلاين؟",
+      "expected_answer": "لا، شهادة حسن السيرة (ديال البوليس) كتحتاج تمشي حضوريا للكوميسارية اللي تابع ليها السكن ديالك.",
+      "answer": "لا، شهادة حسن السيرة (ديال البوليس) كتحتاج تمشي حضوريا للكوميسارية اللي تابع ليها السكن ديالك.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "good_conduct",
+      "category": "faq",
+      "query": "شنو الفرق بين حسن السيرة والسجل العدلي؟",
+      "expected_answer": "حسن السيرة (Fiche anthropométrique) كتعطيها الإدارة العامة للأمن الوطني (الشرطة)، أما السجل العدلي (Casier judiciaire) كتعطيه وزارة العدل (المحكمة).",
+      "answer": "حسن السيرة (Fiche anthropométrique) كتعطيها الإدارة العامة للأمن الوطني (الشرطة)، أما السجل العدلي (Casier judiciaire) كتعطيه وزارة العدل (المحكمة).",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "good_conduct",
+      "category": "faq",
+      "query": "شحال كتكلف شهادة حسن السيرة؟",
+      "expected_answer": "كتكلف 30 درهم عبارة عن طابع بريدي (تنبر).",
+      "answer": "كتكلف 30 درهم عبارة عن طابع بريدي (تنبر).",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "life",
+      "category": "faq",
+      "query": "هل ضروري الحضور شخصيا؟",
+      "expected_answer": "نعم، الحضور الشخصي ضروري كقاعدة عامة. إلا في حالة المرض أو العجز المبرر بشهادة طبية.",
+      "answer": "نعم، الحضور الشخصي ضروري كقاعدة عامة. إلا في حالة المرض أو العجز المبرر بشهادة طبية.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "life",
+      "category": "faq",
+      "query": "فين نقدر نصاوبها؟",
+      "expected_answer": "في المقاطعة (الملحقة الإدارية) لي تابع ليها السكن ديالك.",
+      "answer": "في المقاطعة (الملحقة الإدارية) لي تابع ليها السكن ديالك.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "life",
+      "category": "faq",
+      "query": "واش كنخلص عليها؟",
+      "expected_answer": "غالبا مجانية، وأحيانا كتخلص غير واجبات الطوابع (2 دراهم).",
+      "answer": "غالبا مجانية، وأحيانا كتخلص غير واجبات الطوابع (2 دراهم).",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "marriage",
+      "category": "faq",
+      "query": "كم الرسوم ديال عقد الزواج؟",
+      "expected_answer": "متفاوتة: 200-500 درهم لأتعاب العدول + طوابع + مصاريف إدارية. قد تزيد في حالات خاصة أو زواج مختلط.",
+      "answer": "متفاوتة: 200-500 درهم لأتعاب العدول + طوابع + مصاريف إدارية. قد تزيد في حالات خاصة أو زواج مختلط.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "marriage",
+      "category": "faq",
+      "query": "هل يمكن عقد الزواج أونلاين؟",
+      "expected_answer": "لا، الإجراء حضوري عبر عدول وقاضي الأسرة. ما فيه طلب إلكتروني كامل عبر watiqa.ma لهاد الخدمة.",
+      "answer": "لا، الإجراء حضوري عبر عدول وقاضي الأسرة. ما فيه طلب إلكتروني كامل عبر watiqa.ma لهاد الخدمة.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "marriage",
+      "category": "faq",
+      "query": "شنو السن القانوني للزواج؟",
+      "expected_answer": "18 سنة كاملة للطرفين. إلا إذن استثنائي من قاضي الأسرة لمن هم أقل.",
+      "answer": "18 سنة كاملة للطرفين. إلا إذن استثنائي من قاضي الأسرة لمن هم أقل.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "non_property",
+      "category": "faq",
+      "query": "واش ضروري نمشي لدار الضريبة باش ناخد شهادة عدم الملكية؟",
+      "expected_answer": "نعم، ضروري تجيب شهادة عدم الخضوع للضريبة (Non-imposition) من إدارة الضرائب كإثبات أولي.",
+      "answer": "نعم، ضروري تجيب شهادة عدم الخضوع للضريبة (Non-imposition) من إدارة الضرائب كإثبات أولي.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "non_property",
+      "category": "faq",
+      "query": "شحال ديال الوقت باش تخرج؟",
+      "expected_answer": "كتاخد وقت حيت فيها إدارات مختلفة (الضرائب، المقاطعة..)، غالبا بين 3 أيام إلى أسبوع.",
+      "answer": "كتاخد وقت حيت فيها إدارات مختلفة (الضرائب، المقاطعة..)، غالبا بين 3 أيام إلى أسبوع.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "non_property",
+      "category": "faq",
+      "query": "واش نقدر نصاوبها أونلاين؟",
+      "expected_answer": "شهادة عدم الخضوع للضريبة ديال دار الضريبة ممكن تطلبها أونلاين عبر بوابة (tax.gov.ma)، ولكن شهادة عدم الملكية النهائية كتحتاج تمشي للمقاطعة.",
+      "answer": "شهادة عدم الخضوع للضريبة ديال دار الضريبة ممكن تطلبها أونلاين عبر بوابة (tax.gov.ma)، ولكن شهادة عدم الملكية النهائية كتحتاج تمشي للمقاطعة.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "residence",
+      "category": "faq",
+      "query": "كم الرسوم ديال شهادة السكنى؟",
+      "expected_answer": "حوالي 20 درهم (طوابع ضريبية). ما فيه رسوم إضافية رسمية في أغلب الحالات.",
+      "answer": "حوالي 20 درهم (طوابع ضريبية). ما فيه رسوم إضافية رسمية في أغلب الحالات.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "residence",
+      "category": "faq",
+      "query": "هل يمكن طلب شهادة السكنى أونلاين؟",
+      "expected_answer": "لا، حالياً (2026) الإجراء حضوري فقط. بعض المدن الكبرى قد توفر تسهيلات جزئية، لكن التحقق الميداني يبقى ضرورياً.",
+      "answer": "لا، حالياً (2026) الإجراء حضوري فقط. بعض المدن الكبرى قد توفر تسهيلات جزئية، لكن التحقق الميداني يبقى ضرورياً.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "residence",
+      "category": "faq",
+      "query": "كم مدة صلاحية الشهادة؟",
+      "expected_answer": "غالباً 3 أشهر، لكن بعض الإدارات (مثل المدرسة أو البنك) تقبل شهادة أحدث من 6 أشهر.",
+      "answer": "غالباً 3 أشهر، لكن بعض الإدارات (مثل المدرسة أو البنك) تقبل شهادة أحدث من 6 أشهر.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "single_status",
+      "category": "faq",
+      "query": "واش نقدر ناخدها أونلاين؟",
+      "expected_answer": "لا، حاليا شهادة العزوبة كتطلب الحضور شخصيا حيت كتحتاج بحث من طرف عون السلطة (المقدم).",
+      "answer": "لا، حاليا شهادة العزوبة كتطلب الحضور شخصيا حيت كتحتاج بحث من طرف عون السلطة (المقدم).",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "single_status",
+      "category": "faq",
+      "query": "شنو هي الوثائق المطلوبة؟",
+      "expected_answer": "تصريح بالشرف مصادق عليه، نسخة من لاكارط، نسخة كاملة من عقد الازدياد (Copie intégrale) جديدة.",
+      "answer": "تصريح بالشرف مصادق عليه، نسخة من لاكارط، نسخة كاملة من عقد الازدياد (Copie intégrale) جديدة.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    },
+    {
+      "kind": "faq_retrieval",
+      "service": "single_status",
+      "category": "faq",
+      "query": "شحال ديال الوقت كتاخد؟",
+      "expected_answer": "غالبا من يومين حتى لـ 4 أيام، على حساب البحث ديال عون السلطة.",
+      "answer": "غالبا من يومين حتى لـ 4 أيام، على حساب البحث ديال عون السلطة.",
+      "confidence": 0.95,
+      "keyword_recall": 1.0,
+      "passed": true
+    }
+  ]
+}

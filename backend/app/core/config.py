@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
     upload_root: str = "uploads"
+    admin_email: str = "admin@demo.local"
+    admin_password: str = "admin123"
 
 
 settings = Settings()

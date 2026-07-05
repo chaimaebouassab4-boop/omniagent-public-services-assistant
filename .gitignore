@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Local databases & uploads
+*.db
+chroma_db/
+backend/uploads/
+uploads/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Env & logs
+.env
+*.log

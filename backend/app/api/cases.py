@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models import AuditLog, Case, ChatMessage, Document, Service, User
-from app.services.knowledge_base import answer_from_knowledge, normalize_service_id
+from app.services.knowledge_base import answer_with_metadata, normalize_service_id
 
 router = APIRouter(prefix="/api", tags=["cases"])
 
@@ -252,7 +252,8 @@ async def send_chat_message(
             detail="service_id or valid case_id is required"
         )
 
-    ai_response = answer_from_knowledge(service_id=service_id, user_message=request.message)
+    knowledge_answer = answer_with_metadata(service_id=service_id, user_message=request.message)
+    ai_response = knowledge_answer.answer
 
     message_id = "standalone"
     if case:
@@ -285,6 +286,9 @@ async def send_chat_message(
         "status": "success",
         "data": {
             "response": ai_response,
+            "confidence": knowledge_answer.confidence,
+            "sources": knowledge_answer.sources,
+            "language": request.language,
             "message_id": message_id,
             "service_id": service_id
         }

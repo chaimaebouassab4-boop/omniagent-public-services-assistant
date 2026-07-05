@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import cases, chat, health
+# `cases` and `chat` implement the original enveloped API and are kept for
+# reference; the omniagent frontend is served by the `omni` router below.
+from app.api import auth, health, omni  # noqa: F401
 from app.core.config import settings
-from app.core.seed_services import seed_services
+from app.core.seed_services import seed_admin, seed_services
 from app.db.database import Base, SessionLocal, engine
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -16,8 +18,8 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-app.include_router(cases.router)
-app.include_router(chat.router)
+app.include_router(auth.router)
+app.include_router(omni.router)
 app.include_router(health.router)
 
 
@@ -28,6 +30,7 @@ async def startup_event() -> None:
     db = SessionLocal()
     try:
         seed_services(db)
+        seed_admin(db)
     finally:
         db.close()
 

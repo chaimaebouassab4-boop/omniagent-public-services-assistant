@@ -1,5 +1,6 @@
 import json
 import re
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -8,26 +9,60 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 KB_ROOT = PROJECT_ROOT / "tests" / "knowledge_base"
 
-SERVICE_KB_PATHS = {
-    "birth_certificate": KB_ROOT / "birth" / "birth_certificate.json",
-    "residence_certificate": KB_ROOT / "residence" / "residence_certificate.json",
-    "marriage_contract": KB_ROOT / "marriage" / "marriage_certificate.json",
+# Canonical service id -> knowledge base folder name.
+SERVICE_DIRS = {
+    "residence_certificate": "residence",
+    "birth_certificate": "birth",
+    "marriage_contract": "marriage",
+    "death_certificate": "death",
+    "life_certificate": "life",
+    "single_status_certificate": "single_status",
+    "non_property_certificate": "non_property",
+    "administrative_certificate": "administrative",
+    "good_conduct_certificate": "good_conduct",
+    "criminal_record": "criminal_record",
 }
 
 COMMON_KB_PATH = KB_ROOT / "common" / "faq.json"
 
 SERVICE_ALIASES = {
     "birth": "birth_certificate",
-    "birth_certificate": "birth_certificate",
     "naissance": "birth_certificate",
     "residence": "residence_certificate",
-    "residence_certificate": "residence_certificate",
     "certificat_residence": "residence_certificate",
     "marriage": "marriage_contract",
     "marriage_certificate": "marriage_contract",
-    "marriage_contract": "marriage_contract",
     "mariage": "marriage_contract",
+    "death": "death_certificate",
+    "deces": "death_certificate",
+    "life": "life_certificate",
+    "vie": "life_certificate",
+    "single_status": "single_status_certificate",
+    "celibat": "single_status_certificate",
+    "non_property": "non_property_certificate",
+    "administrative": "administrative_certificate",
+    "good_conduct": "good_conduct_certificate",
+    "bonne_conduite": "good_conduct_certificate",
+    "criminal_record": "criminal_record",
+    "casier_judiciaire": "criminal_record",
 }
+# Canonical ids map to themselves.
+SERVICE_ALIASES.update({service_id: service_id for service_id in SERVICE_DIRS})
+
+# FAQ matches below this confidence trigger the clarification fallback.
+LOW_CONFIDENCE_THRESHOLD = 0.30
+
+FALLBACK_ANSWER = "Ma lqit-sh ma3loumat kfaya daba. 3tini details akthar bach n3awnek."
+
+
+@dataclass
+class KnowledgeAnswer:
+    """Structured chat answer with retrieval metadata."""
+
+    answer: str
+    confidence: float
+    sources: list[str] = field(default_factory=list)
+    matched_question: str | None = None
 
 
 def normalize_service_id(service_id: str | None) -> str | None:
@@ -38,13 +73,27 @@ def normalize_service_id(service_id: str | None) -> str | None:
     return SERVICE_ALIASES.get(lower, lower)
 
 
-@lru_cache(maxsize=8)
+def _service_kb_path(canonical_id: str) -> Path | None:
+    """Locate the knowledge JSON file for a canonical service id."""
+    folder = SERVICE_DIRS.get(canonical_id)
+    if not folder:
+        return None
+    service_dir = KB_ROOT / folder
+    if not service_dir.is_dir():
+        return None
+    for path in sorted(service_dir.glob("*.json")):
+        if "test_cases" not in path.name:
+            return path
+    return None
+
+
+@lru_cache(maxsize=16)
 def load_service_knowledge(service_id: str) -> dict[str, Any]:
     """Load JSON knowledge for one service."""
     canonical = normalize_service_id(service_id)
     if not canonical:
         return {}
-    path = SERVICE_KB_PATHS.get(canonical)
+    path = _service_kb_path(canonical)
     if not path or not path.exists():
         return {}
     try:
@@ -66,6 +115,16 @@ def load_common_knowledge() -> dict[str, Any]:
         return {}
 
 
+def _source_label(service_id: str | None) -> list[str]:
+    canonical = normalize_service_id(service_id)
+    if not canonical:
+        return []
+    path = _service_kb_path(canonical)
+    if path is None:
+        return []
+    return [str(path.relative_to(KB_ROOT)).replace("\\", "/")]
+
+
 def _tokenize(text: str) -> set[str]:
     """Extract lowercase word tokens while ignoring punctuation and quotes."""
     return {
@@ -75,8 +134,14 @@ def _tokenize(text: str) -> set[str]:
     }
 
 
-def _score_match(query: str, question: str) -> int:
-    return len(_tokenize(query).intersection(_tokenize(question)))
+def _score_match(query_tokens: set[str], question: str) -> tuple[int, float]:
+    """Return raw overlap count and overlap coefficient against a FAQ question."""
+    question_tokens = _tokenize(question)
+    if not query_tokens or not question_tokens:
+        return 0, 0.0
+    overlap = len(query_tokens.intersection(question_tokens))
+    coefficient = overlap / min(len(query_tokens), len(question_tokens))
+    return overlap, coefficient
 
 
 def _answer_marriage_fallback(user_message: str, knowledge: dict[str, Any]) -> str | None:
@@ -105,36 +170,10 @@ def _answer_marriage_fallback(user_message: str, knowledge: dict[str, Any]) -> s
     return None
 
 
-def answer_from_knowledge(service_id: str, user_message: str) -> str:
-    """Return best answer from FAQ, then structured fallbacks."""
-    canonical_service_id = normalize_service_id(service_id)
-    knowledge = load_service_knowledge(service_id)
-    if not knowledge:
-        knowledge = load_common_knowledge()
-    if not knowledge:
-        return "Ma lqit-sh ma3loumat kfaya daba. 3tini details akthar bach n3awnek."
-
-    faq_entries = knowledge.get("faq", [])
-    best_entry: dict[str, Any] | None = None
-    best_score = 0
-    for entry in faq_entries:
-        question = str(entry.get("question", ""))
-        score = _score_match(user_message, question)
-        if score > best_score:
-            best_score = score
-            best_entry = entry
-
-    if best_entry and best_score > 0:
-        answer = str(best_entry.get("answer", "")).strip()
-        if answer:
-            return answer
-
-    if canonical_service_id == "marriage_contract":
-        marriage_fallback = _answer_marriage_fallback(user_message, knowledge)
-        if marriage_fallback:
-            return marriage_fallback
-
+def _structured_fallback(user_message: str, knowledge: dict[str, Any]) -> str | None:
+    """Answer from structured KB fields (fees, documents, description)."""
     lowered_message = user_message.lower()
+
     fees = knowledge.get("fees")
     if isinstance(fees, str) and any(
         term in lowered_message for term in ["رسوم", "ثمن", "prix", "fee", "fees", "cost"]
@@ -155,4 +194,59 @@ def answer_from_knowledge(service_id: str, user_message: str) -> str:
     description = knowledge.get("description_ar") or knowledge.get("description") or ""
     if description:
         return str(description)
-    return "Twasalna b su2alek. Ghadi n3tiwk jawab mofdhal mlli tkoun ma3loumat akthar."
+    return None
+
+
+def answer_with_metadata(service_id: str, user_message: str) -> KnowledgeAnswer:
+    """Return the best KB answer with confidence score and source files."""
+    canonical_service_id = normalize_service_id(service_id)
+    sources = _source_label(canonical_service_id)
+    knowledge = load_service_knowledge(service_id)
+    if not knowledge:
+        knowledge = load_common_knowledge()
+        sources = ["common/faq.json"] if knowledge else []
+    if not knowledge:
+        return KnowledgeAnswer(answer=FALLBACK_ANSWER, confidence=0.0)
+
+    query_tokens = _tokenize(user_message)
+    best_entry: dict[str, Any] | None = None
+    best_overlap = 0
+    best_coefficient = 0.0
+    for entry in knowledge.get("faq", []):
+        question = str(entry.get("question", ""))
+        overlap, coefficient = _score_match(query_tokens, question)
+        if (overlap, coefficient) > (best_overlap, best_coefficient):
+            best_overlap = overlap
+            best_coefficient = coefficient
+            best_entry = entry
+
+    if best_entry and best_overlap > 0:
+        answer = str(best_entry.get("answer", "")).strip()
+        confidence = round(min(0.95, 0.30 + 0.65 * best_coefficient), 2)
+        if answer and confidence >= LOW_CONFIDENCE_THRESHOLD and best_overlap >= 2:
+            return KnowledgeAnswer(
+                answer=answer,
+                confidence=confidence,
+                sources=sources,
+                matched_question=str(best_entry.get("question", ""))
+            )
+
+    if canonical_service_id == "marriage_contract":
+        marriage_fallback = _answer_marriage_fallback(user_message, knowledge)
+        if marriage_fallback:
+            return KnowledgeAnswer(answer=marriage_fallback, confidence=0.60, sources=sources)
+
+    structured = _structured_fallback(user_message, knowledge)
+    if structured:
+        return KnowledgeAnswer(answer=structured, confidence=0.50, sources=sources)
+
+    return KnowledgeAnswer(
+        answer="Twasalna b su2alek. Ghadi n3tiwk jawab mofdhal mlli tkoun ma3loumat akthar.",
+        confidence=0.20,
+        sources=sources
+    )
+
+
+def answer_from_knowledge(service_id: str, user_message: str) -> str:
+    """Backward-compatible helper returning only the answer text."""
+    return answer_with_metadata(service_id, user_message).answer
