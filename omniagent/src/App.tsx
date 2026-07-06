@@ -1,10 +1,11 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { ReactNode } from "react";
+import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/lib/i18n";
-import { getToken } from "@/lib/auth";
+import { getToken, getStoredUser, isAuthenticated } from "@/lib/auth";
 import NotFound from "@/pages/not-found";
 
 // Attach the stored JWT (if any) as a Bearer token on every API request.
@@ -22,18 +23,45 @@ import Admin from "@/pages/admin";
 
 const queryClient = new QueryClient();
 
+/** Renders children only for authenticated users; otherwise redirects to /login. */
+function Protected({ children, adminOnly = false }: { children: ReactNode; adminOnly?: boolean }) {
+  if (!isAuthenticated()) return <Redirect to="/login" />;
+  if (adminOnly && !getStoredUser()?.isAdmin) return <Redirect to="/dashboard" />;
+  return <>{children}</>;
+}
+
+/** Keeps already-authenticated users out of the login/signup pages. */
+function GuestOnly({ children }: { children: ReactNode }) {
+  if (isAuthenticated()) {
+    return <Redirect to={getStoredUser()?.isAdmin ? "/admin" : "/dashboard"} />;
+  }
+  return <>{children}</>;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
-      <Route path="/login" component={Login} />
-      <Route path="/signup" component={Signup} />
+      <Route path="/login">
+        <GuestOnly><Login /></GuestOnly>
+      </Route>
+      <Route path="/signup">
+        <GuestOnly><Signup /></GuestOnly>
+      </Route>
       <Route path="/services" component={Services} />
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/cases/:id" component={CaseDetail} />
       <Route path="/chat" component={Chat} />
-      <Route path="/profile" component={Profile} />
-      <Route path="/admin" component={Admin} />
+      <Route path="/dashboard">
+        <Protected><Dashboard /></Protected>
+      </Route>
+      <Route path="/cases/:id">
+        <Protected><CaseDetail /></Protected>
+      </Route>
+      <Route path="/profile">
+        <Protected><Profile /></Protected>
+      </Route>
+      <Route path="/admin">
+        <Protected adminOnly><Admin /></Protected>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

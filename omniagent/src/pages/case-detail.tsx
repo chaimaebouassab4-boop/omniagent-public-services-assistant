@@ -1,16 +1,32 @@
 import { useI18n } from "@/lib/i18n";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useGetCase, useGetCaseTimeline, useListMessages, useSendMessage, getListMessagesQueryKey } from "@workspace/api-client-react";
+import {
+  useGetCase,
+  useGetCaseTimeline,
+  useListMessages,
+  useSendMessage,
+  useListDocuments,
+  getListMessagesQueryKey,
+  getListDocumentsQueryKey,
+} from "@workspace/api-client-react";
 import { useParams } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "./dashboard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, Mic, Send, Bot, User, CheckCircle2, Clock } from "lucide-react";
+import { Upload, Mic, Send, Bot, User, CheckCircle2, Clock, FileText, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { uploadDocument, validateFile } from "@/lib/documents";
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 export default function CaseDetail() {
   const { id } = useParams();
@@ -19,11 +35,53 @@ export default function CaseDetail() {
   const { data: caseData, isLoading: caseLoading } = useGetCase(caseId, { query: { enabled: !!caseId, queryKey: ['case', caseId] as any } });
   const { data: timeline } = useGetCaseTimeline(caseId, { query: { enabled: !!caseId, queryKey: ['case-timeline', caseId] as any } });
   const { data: messages } = useListMessages(caseId, { query: { enabled: !!caseId, queryKey: getListMessagesQueryKey(caseId) as any } });
+  const { data: documents } = useListDocuments(caseId, { query: { enabled: !!caseId, queryKey: getListDocumentsQueryKey(caseId) as any } });
   const sendMessage = useSendMessage();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const [messageInput, setMessageInput] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file || !caseId) return;
+
+    const validationError = validateFile(file);
+    if (validationError) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Fichier refusé" : "الملف مرفوض",
+        description:
+          validationError === "too_large"
+            ? (language === "fr" ? "Taille maximale : 10 MB." : "الحجم الأقصى: 10 ميغابايت.")
+            : (language === "fr" ? "Formats acceptés : PDF, JPEG, PNG, WebP." : "الصيغ المقبولة: PDF, JPEG, PNG, WebP."),
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      await uploadDocument(caseId, file);
+      toast({
+        title: language === "fr" ? "Document envoyé" : "تم إرسال الوثيقة",
+        description: file.name,
+      });
+      queryClient.invalidateQueries({ queryKey: getListDocumentsQueryKey(caseId) });
+      queryClient.invalidateQueries({ queryKey: ['case-timeline', caseId] });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Échec de l'envoi" : "فشل الإرسال",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -125,8 +183,16 @@ export default function CaseDetail() {
                   ))}
                 </div>
                 <form onSubmit={handleSendMessage} className="flex gap-2">
-                  <Button type="button" variant="outline" size="icon" className="shrink-0 text-muted-foreground">
-                    <Upload className="w-4 h-4" />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0 text-muted-foreground"
+                    disabled={isUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                    title={language === "fr" ? "Joindre un document" : "إرفاق وثيقة"}
+                  >
+                    {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                   </Button>
                   <Button type="button" variant="outline" size="icon" className="shrink-0 text-muted-foreground">
                     <Mic className="w-4 h-4" />
@@ -148,6 +214,16 @@ export default function CaseDetail() {
 
         {/* Right Column: Timeline & Checklist */}
         <div className="space-y-6">
+          {/* Hidden file input shared by the upload buttons */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={handleFileSelected}
+            data-testid="input-document-file"
+          />
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">{language === "fr" ? "Documents Requis" : "الوثائق المطلوبة"}</CardTitle>
@@ -160,6 +236,60 @@ export default function CaseDetail() {
                     <div className="text-sm font-medium">{doc}</div>
                   </div>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Uploaded documents */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base">
+                {language === "fr" ? "Mes Documents" : "وثائقي"}
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                disabled={isUploading}
+                onClick={() => fileInputRef.current?.click()}
+                data-testid="button-upload-document"
+              >
+                {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                {language === "fr" ? "Ajouter" : "إضافة"}
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {documents?.map((doc) => (
+                  <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
+                    <FileText className="w-5 h-5 text-primary shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate" title={doc.name}>{doc.name}</div>
+                      <div className="text-xs text-muted-foreground">{formatFileSize(doc.fileSize)}</div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={
+                        doc.status === "verified"
+                          ? "border-green-300 bg-green-50 text-green-700"
+                          : doc.status === "rejected"
+                          ? "border-red-300 bg-red-50 text-red-700"
+                          : "border-amber-300 bg-amber-50 text-amber-700"
+                      }
+                    >
+                      {doc.status === "verified"
+                        ? (language === "fr" ? "Vérifié" : "تم التحقق")
+                        : doc.status === "rejected"
+                        ? (language === "fr" ? "Rejeté" : "مرفوض")
+                        : (language === "fr" ? "En attente" : "قيد المراجعة")}
+                    </Badge>
+                  </div>
+                ))}
+                {!documents?.length && (
+                  <div className="text-sm text-muted-foreground text-center py-4">
+                    {language === "fr" ? "Aucun document envoyé pour l'instant." : "لم يتم إرسال أي وثيقة بعد."}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

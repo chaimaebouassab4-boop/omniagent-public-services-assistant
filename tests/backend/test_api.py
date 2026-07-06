@@ -204,6 +204,68 @@ def test_case_documents_empty(client):
     assert response.json() == []
 
 
+def test_upload_document_flow(client):
+    case = create_case(client)
+    response = client.post(
+        f"/api/cases/{case['id']}/documents",
+        data={"docType": "national_id"},
+        files={"file": ("cin.png", b"fake-png-bytes", "image/png")},
+    )
+    assert response.status_code == 201, response.text
+    doc = response.json()
+    assert doc["name"] == "cin.png"
+    assert doc["fileType"] == "image/png"
+    assert doc["fileSize"] == len(b"fake-png-bytes")
+    assert doc["status"] == "pending"
+    assert doc["caseId"] == case["id"]
+
+    listing = client.get(f"/api/cases/{case['id']}/documents").json()
+    assert len(listing) == 1
+    assert listing[0]["name"] == "cin.png"
+
+    timeline = client.get(f"/api/cases/{case['id']}/timeline").json()
+    assert "uploaded" in [event["event"] for event in timeline]
+
+
+def test_upload_document_rejects_bad_type(client):
+    case = create_case(client)
+    response = client.post(
+        f"/api/cases/{case['id']}/documents",
+        files={"file": ("virus.exe", b"MZ...", "application/x-msdownload")},
+    )
+    assert response.status_code == 415
+
+
+def test_upload_document_rejects_oversized(client):
+    case = create_case(client)
+    oversized = b"x" * (10 * 1024 * 1024 + 1)
+    response = client.post(
+        f"/api/cases/{case['id']}/documents",
+        files={"file": ("big.pdf", oversized, "application/pdf")},
+    )
+    assert response.status_code == 413
+
+
+def test_upload_document_rejects_empty_file(client):
+    case = create_case(client)
+    response = client.post(
+        f"/api/cases/{case['id']}/documents",
+        files={"file": ("empty.pdf", b"", "application/pdf")},
+    )
+    assert response.status_code == 400
+
+
+def test_upload_document_sanitizes_filename(client):
+    case = create_case(client)
+    response = client.post(
+        f"/api/cases/{case['id']}/documents",
+        files={"file": ("../../etc/passwd.png", b"data", "image/png")},
+    )
+    assert response.status_code == 201
+    assert "/" not in response.json()["name"]
+    assert ".." not in response.json()["name"]
+
+
 def test_standalone_chat(client):
     send = client.post(
         "/api/chat/messages",

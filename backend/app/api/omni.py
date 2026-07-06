@@ -5,13 +5,17 @@ camelCase fields and numeric ids. This router serves that exact contract on the
 `/api/*` paths the frontend calls, backed by the existing SQLAlchemy models and
 the knowledge-base answer engine.
 """
+import re
+import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models import AuditLog, Case, ChatMessage, Document, Service, User
@@ -50,6 +54,15 @@ _STRING_TO_NUM = {sid: idx + 1 for idx, sid in enumerate(SERVICE_ORDER)}
 _NUM_TO_STRING = {idx + 1: sid for idx, sid in enumerate(SERVICE_ORDER)}
 
 MESSAGE_LANGUAGES = {"ar", "fr", "darija"}
+
+# Upload constraints for citizen documents.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+ALLOWED_UPLOAD_MIME_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -319,6 +332,74 @@ async def list_case_documents(
         .all()
     )
     return [serialize_document(d, i + 1, case.public_id) for i, d in enumerate(docs)]
+
+
+def _sanitize_filename(raw_name: str | None) -> str:
+    """Keep only the basename with safe characters; never trust client paths."""
+    base = Path(raw_name or "document").name
+    cleaned = re.sub(r"[^\w.\- ]", "_", base).strip() or "document"
+    return cleaned[:120]
+
+
+@router.post("/cases/{case_id}/documents", status_code=status.HTTP_201_CREATED)
+async def upload_case_document(
+    case_id: int,
+    file: UploadFile = File(...),
+    docType: str = Form(default="other"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Upload one citizen document for a case (PDF or image, max 10 MB)."""
+    case = get_case_or_404(db, case_id)
+
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_UPLOAD_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PDF, JPEG, PNG or WebP files are accepted",
+        )
+
+    file_bytes = await file.read()
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File exceeds the 10 MB limit",
+        )
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty",
+        )
+
+    safe_name = _sanitize_filename(file.filename)
+    upload_dir = Path(settings.upload_root) / case.id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    # Unique on-disk name to avoid collisions; original name kept in DB.
+    stored_path = upload_dir / f"{uuid.uuid4().hex}_{safe_name}"
+    stored_path.write_bytes(file_bytes)
+
+    document = Document(
+        case_id=case.id,
+        doc_type=docType.strip()[:64] or "other",
+        file_name=safe_name,
+        file_path=str(stored_path),
+        file_size=len(file_bytes),
+        mime_type=content_type,
+        validation_status="pending",
+    )
+    db.add(document)
+    log_action(
+        db,
+        case.id,
+        "uploaded",
+        current_user.id,
+        {"doc_type": document.doc_type, "file_name": safe_name},
+    )
+    db.commit()
+    db.refresh(document)
+
+    count = db.query(Document).filter(Document.case_id == case.id).count()
+    return serialize_document(document, count, case.public_id)
 
 
 @router.get("/cases/{case_id}/messages")
