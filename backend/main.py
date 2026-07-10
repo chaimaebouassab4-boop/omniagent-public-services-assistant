@@ -37,4 +37,4 @@ async def startup_event() -> None:
 
 @app.get("/")
 async def root() -> dict:
-    return {"message": "Omniagent Public Services API"}
+    return {"message": "Omniagent Public Services API.."}
