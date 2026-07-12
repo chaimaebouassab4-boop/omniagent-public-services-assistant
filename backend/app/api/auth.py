@@ -1,7 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import re
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import (
     create_access_token,
     get_current_user,
@@ -12,6 +18,10 @@ from app.db.database import get_db
 from app.models import User
 
 router = APIRouter(prefix="/api", tags=["auth"])
+
+MAX_PROFILE_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+CIN_MIME_TYPES = {"image/png", "application/pdf"}
+PERSONAL_DOC_MIME_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
 
 
 # --------------------------------------------------------------------------- #
@@ -44,6 +54,12 @@ def serialize_user(user: User) -> dict:
         "fullName": user.full_name or "",
         "phone": user.phone,
         "isAdmin": user.is_admin,
+        "cinFileName": Path(user.cin_file_path).name.split("_", 1)[-1] if user.cin_file_path else None,
+        # Strip the server-side "path" key before exposing document metadata.
+        "personalDocuments": [
+            {key: value for key, value in doc.items() if key != "path"}
+            for doc in (user.personal_documents or [])
+        ],
     }
 
 
@@ -111,6 +127,90 @@ async def update_me(
         current_user.full_name = request.fullName
     if request.phone is not None:
         current_user.phone = request.phone
+    db.commit()
+    db.refresh(current_user)
+    return serialize_user(current_user)
+
+
+# --------------------------------------------------------------------------- #
+# Profile documents (CIN + personal files)
+# --------------------------------------------------------------------------- #
+def _sanitize_upload_name(raw_name: str | None) -> str:
+    base = Path(raw_name or "document").name
+    cleaned = re.sub(r"[^\w.\- ]", "_", base).strip() or "document"
+    return cleaned[:120]
+
+
+async def _read_validated_upload(file: UploadFile, allowed_types: set[str]) -> tuple[bytes, str]:
+    """Validate content type and size, returning the bytes and safe filename."""
+    content_type = (file.content_type or "").lower()
+    if content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported file type",
+        )
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
+    if len(file_bytes) > MAX_PROFILE_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File exceeds the 10 MB limit",
+        )
+    return file_bytes, _sanitize_upload_name(file.filename)
+
+
+def _profile_dir(user_id: str) -> Path:
+    directory = Path(settings.upload_root) / "profiles" / user_id
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+@router.post("/users/me/documents/cin", status_code=status.HTTP_201_CREATED)
+async def upload_cin(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Upload the national identity card (PNG or PDF only); replaces any previous CIN."""
+    file_bytes, safe_name = await _read_validated_upload(file, CIN_MIME_TYPES)
+
+    previous = Path(current_user.cin_file_path) if current_user.cin_file_path else None
+    stored_path = _profile_dir(current_user.id) / f"{uuid.uuid4().hex}_{safe_name}"
+    stored_path.write_bytes(file_bytes)
+
+    current_user.cin_file_path = str(stored_path)
+    db.commit()
+    db.refresh(current_user)
+
+    if previous and previous.exists():
+        previous.unlink(missing_ok=True)
+
+    return serialize_user(current_user)
+
+
+@router.post("/users/me/documents/personal", status_code=status.HTTP_201_CREATED)
+async def upload_personal_document(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Attach a personal document (PDF or image) to the user's profile."""
+    file_bytes, safe_name = await _read_validated_upload(file, PERSONAL_DOC_MIME_TYPES)
+
+    stored_path = _profile_dir(current_user.id) / f"{uuid.uuid4().hex}_{safe_name}"
+    stored_path.write_bytes(file_bytes)
+
+    entry = {
+        "id": uuid.uuid4().hex,
+        "name": safe_name,
+        "size": len(file_bytes),
+        "mimeType": (file.content_type or "").lower(),
+        "uploadedAt": datetime.now(UTC).isoformat(),
+        "path": str(stored_path),
+    }
+    # Reassign (not mutate) so SQLAlchemy detects the JSON column change.
+    current_user.personal_documents = [*(current_user.personal_documents or []), entry]
     db.commit()
     db.refresh(current_user)
     return serialize_user(current_user)

@@ -5,24 +5,92 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, Mic, Send, Bot, User } from "lucide-react";
+import { Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { uploadChatDocument, validateFile } from "@/lib/documents";
+import { clearChatHistory } from "@/lib/chat";
+
+const DOCUMENT_PREFIX = "[Document] ";
 
 export default function Chat() {
   const { t, language, isRtl } = useI18n();
   const { data: messages } = useListChatMessages();
   const sendChatMessage = useSendChatMessage();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const [messageInput, setMessageInput] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleNewConversation = async () => {
+    if (!messages?.length) return;
+    const confirmText = language === "fr"
+      ? "Commencer une nouvelle discussion ? L'historique actuel sera effacé."
+      : "بغيتي تبدا محادثة جديدة؟ غادي يتمسح السجل الحالي.";
+    if (!window.confirm(confirmText)) return;
+
+    setIsClearing(true);
+    try {
+      await clearChatHistory();
+      queryClient.invalidateQueries({ queryKey: getListChatMessagesQueryKey() });
+      toast({
+        title: language === "fr" ? "Nouvelle discussion" : "محادثة جديدة",
+        description: language === "fr" ? "L'historique a été effacé." : "تم مسح السجل.",
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Échec" : "فشل",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setIsClearing(false);
+    }
+  };
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, sendChatMessage.isPending]);
+  }, [messages, sendChatMessage.isPending, isUploading]);
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const reason = validateFile(file);
+    if (reason) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Fichier refusé" : "الملف مرفوض",
+        description:
+          reason === "too_large"
+            ? (language === "fr" ? "Taille maximale : 10 MB." : "الحجم الأقصى: 10 ميغابايت.")
+            : (language === "fr" ? "Formats acceptés : PDF, JPEG, PNG, WebP." : "الصيغ المقبولة: PDF, JPEG, PNG, WebP."),
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      await uploadChatDocument(file, language);
+      queryClient.invalidateQueries({ queryKey: getListChatMessagesQueryKey() });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Échec de l'envoi" : "فشل الإرسال",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleSendMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -46,8 +114,19 @@ export default function Chat() {
   return (
     <AppLayout>
       <div className="max-w-4xl mx-auto h-[calc(100vh-80px)] flex flex-col">
-        <div className="mb-4 shrink-0">
+        <div className={`mb-4 shrink-0 flex items-center justify-between ${isRtl ? "flex-row-reverse" : ""}`}>
           <h1 className="text-3xl font-bold text-foreground">{t("nav.chat")}</h1>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={isClearing || !messages?.length}
+            onClick={handleNewConversation}
+            data-testid="button-new-conversation"
+          >
+            {isClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquarePlus className="w-4 h-4" />}
+            {language === "fr" ? "Nouvelle discussion" : "محادثة جديدة"}
+          </Button>
         </div>
 
         <Card className="flex-1 flex flex-col min-h-0 overflow-hidden shadow-sm">
@@ -66,7 +145,14 @@ export default function Chat() {
                       {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
                     </div>
                     <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-secondary text-white rounded-tr-none' : 'bg-card border rounded-tl-none text-card-foreground'}`}>
-                      {msg.content}
+                      {msg.content.startsWith(DOCUMENT_PREFIX) ? (
+                        <span className="inline-flex items-center gap-2 font-medium">
+                          <FileText className="w-4 h-4 shrink-0" />
+                          {msg.content.slice(DOCUMENT_PREFIX.length)}
+                        </span>
+                      ) : (
+                        msg.content
+                      )}
                     </div>
                   </div>
                 ))}
@@ -101,8 +187,24 @@ export default function Chat() {
                 </div>
               </div>
               <form onSubmit={handleSendMessage} className="flex gap-3">
-                <Button type="button" variant="outline" size="icon" className="shrink-0 w-12 h-12 rounded-xl text-muted-foreground">
-                  <Upload className="w-5 h-5" />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handleFileSelected}
+                  data-testid="input-chat-file"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0 w-12 h-12 rounded-xl text-muted-foreground"
+                  disabled={isUploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  title={language === "fr" ? "Joindre un document" : "إرفاق وثيقة"}
+                >
+                  {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                 </Button>
                 <Button type="button" variant="outline" size="icon" className="shrink-0 w-12 h-12 rounded-xl text-muted-foreground">
                   <Mic className="w-5 h-5" />

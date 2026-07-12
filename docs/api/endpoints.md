@@ -21,7 +21,27 @@ the frontend stores the token in `localStorage` and attaches it as
 - `GET /api/auth/me` — current user profile (from the Bearer token; falls back to the demo citizen if unauthenticated).
 - `PATCH /api/auth/me` — body `{ fullName?, phone? }` to update the profile.
 
-`user` shape: `{ id, email, fullName, phone, isAdmin }`.
+`user` shape: `{ id, email, fullName, phone, isAdmin, cinFileName, personalDocuments }`.
+
+### Profile documents
+
+- `POST /api/users/me/documents/cin` — multipart `file` (**PNG or PDF only**, ≤ 10 MB). Saves under `uploads/profiles/{user_id}/`, replaces any previous CIN. Returns the refreshed user.
+- `POST /api/users/me/documents/personal` — multipart `file` (PDF/PNG/JPEG/WebP, ≤ 10 MB). Appends `{ id, name, size, mimeType, uploadedAt }` to `personalDocuments` (server paths are never exposed). Returns the refreshed user.
+
+### Chat documents
+
+- `POST /api/chat/documents` — multipart `file` (PDF/PNG/JPEG/WebP, ≤ 10 MB) + optional `language` field (`fr`/`ar`/`darija`). For PDFs, text is extracted with `pypdf` and stored as hidden context (sender `document_context`, excluded from listings). Adds a visible `[Document] <name>` user message plus an assistant acknowledgement (returned, `201`).
+
+### Standalone chat history (per user)
+
+Every standalone chat message carries the author's `user_id`; history is
+**scoped to the authenticated user** (a `session_id` column exists for future
+multi-conversation support).
+
+- `GET /api/chat/messages` — only the current user's messages.
+- `DELETE /api/chat/messages` — clears the current user's history (including
+  hidden document context); returns `{ "deleted": <count> }`. Used by the
+  "Nouvelle discussion" button in the chat UI.
 
 ---
 

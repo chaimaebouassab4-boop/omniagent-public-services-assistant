@@ -108,6 +108,146 @@ def test_signup_short_password_rejected(client):
     assert response.status_code == 422
 
 
+def test_upload_cin_flow(client):
+    signup = client.post(
+        "/api/auth/signup",
+        json={"fullName": "Cin User", "email": "cin@demo.ma", "password": "secret123"},
+    )
+    token = signup.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.post(
+        "/api/users/me/documents/cin",
+        headers=headers,
+        files={"file": ("ma_cin.png", b"png-bytes", "image/png")},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["cinFileName"] == "ma_cin.png"
+
+    me = client.get("/api/auth/me", headers=headers).json()
+    assert me["cinFileName"] == "ma_cin.png"
+
+    # JPEG is not allowed for the CIN (PNG/PDF only)
+    rejected = client.post(
+        "/api/users/me/documents/cin",
+        headers=headers,
+        files={"file": ("cin.jpg", b"jpg", "image/jpeg")},
+    )
+    assert rejected.status_code == 415
+
+
+def test_upload_personal_document_flow(client):
+    signup = client.post(
+        "/api/auth/signup",
+        json={"fullName": "Doc User", "email": "docs@demo.ma", "password": "secret123"},
+    )
+    token = signup.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.post(
+        "/api/users/me/documents/personal",
+        headers=headers,
+        files={"file": ("attestation.pdf", b"%PDF-fake", "application/pdf")},
+    )
+    assert response.status_code == 201, response.text
+    docs = response.json()["personalDocuments"]
+    assert len(docs) == 1
+    assert docs[0]["name"] == "attestation.pdf"
+    assert docs[0]["size"] == len(b"%PDF-fake")
+    assert "path" not in docs[0], "server paths must not be exposed"
+
+    second = client.post(
+        "/api/users/me/documents/personal",
+        headers=headers,
+        files={"file": ("releve.png", b"png", "image/png")},
+    )
+    assert len(second.json()["personalDocuments"]) == 2
+
+
+def test_chat_document_upload(client):
+    response = client.post(
+        "/api/chat/documents",
+        data={"language": "fr"},
+        files={"file": ("dossier.pdf", b"%PDF-not-really", "application/pdf")},
+    )
+    assert response.status_code == 201, response.text
+    ack = response.json()
+    assert ack["role"] == "assistant"
+    assert "dossier.pdf" in ack["content"]
+
+    listing = client.get("/api/chat/messages").json()
+    contents = [m["content"] for m in listing]
+    assert any(c.startswith("[Document] dossier.pdf") for c in contents)
+    # The hidden extraction context must never appear in the thread
+    assert all("document_context" not in m["role"] for m in listing)
+
+
+def make_citizen(client, email: str) -> dict:
+    response = client.post(
+        "/api/auth/signup",
+        json={"fullName": "Chat User", "email": email, "password": "secret123"},
+    )
+    assert response.status_code == 201, response.text
+    return {"Authorization": f"Bearer {response.json()['token']}"}
+
+
+def test_chat_history_is_isolated_per_user(client):
+    headers_a = make_citizen(client, "chat_a@demo.ma")
+    headers_b = make_citizen(client, "chat_b@demo.ma")
+
+    send = client.post(
+        "/api/chat/messages",
+        headers=headers_a,
+        json={"content": "شنو الوثائق لشهادة السكنى؟", "language": "darija"},
+    )
+    assert send.status_code == 201
+
+    history_a = client.get("/api/chat/messages", headers=headers_a).json()
+    assert len(history_a) == 2  # user question + assistant answer
+
+    history_b = client.get("/api/chat/messages", headers=headers_b).json()
+    assert history_b == [], "user B must never see user A's messages"
+
+
+def test_clear_chat_history_only_affects_current_user(client):
+    headers_a = make_citizen(client, "clear_a@demo.ma")
+    headers_b = make_citizen(client, "clear_b@demo.ma")
+
+    client.post("/api/chat/messages", headers=headers_a, json={"content": "سلام", "language": "darija"})
+    client.post("/api/chat/messages", headers=headers_b, json={"content": "سلام", "language": "darija"})
+
+    cleared = client.delete("/api/chat/messages", headers=headers_a)
+    assert cleared.status_code == 200
+    assert cleared.json()["deleted"] == 2
+
+    assert client.get("/api/chat/messages", headers=headers_a).json() == []
+    assert len(client.get("/api/chat/messages", headers=headers_b).json()) == 2
+
+
+def test_chat_document_history_scoped_to_user(client):
+    headers = make_citizen(client, "chat_doc@demo.ma")
+    response = client.post(
+        "/api/chat/documents",
+        headers=headers,
+        files={"file": ("piece.png", b"png-bytes", "image/png")},
+    )
+    assert response.status_code == 201
+
+    history = client.get("/api/chat/messages", headers=headers).json()
+    assert any(m["content"].startswith("[Document] piece.png") for m in history)
+
+    other = make_citizen(client, "chat_doc_other@demo.ma")
+    assert client.get("/api/chat/messages", headers=other).json() == []
+
+
+def test_chat_document_rejects_bad_type(client):
+    response = client.post(
+        "/api/chat/documents",
+        files={"file": ("script.exe", b"MZ", "application/x-msdownload")},
+    )
+    assert response.status_code == 415
+
+
 def test_admin_login_success(client):
     response = client.post(
         "/api/admin/login",

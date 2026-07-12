@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useI18n } from "@/lib/i18n";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -6,14 +6,23 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { LogOut } from "lucide-react";
-import { fetchMe, updateMe, logout, isAuthenticated } from "@/lib/auth";
+import { LogOut, IdCard, FileText, Upload, Loader2, CheckCircle2 } from "lucide-react";
+import { fetchMe, updateMe, logout, isAuthenticated, type PersonalDocument } from "@/lib/auth";
+import { uploadProfileCin, uploadPersonalDocument, validateFile, CIN_UPLOAD_TYPES } from "@/lib/documents";
+import { useToast } from "@/hooks/use-toast";
+
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 export default function Profile() {
   const { t, language, setLanguage } = useI18n();
   const [_, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -22,16 +31,88 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  const [cinFileName, setCinFileName] = useState<string | null>(null);
+  const [personalDocuments, setPersonalDocuments] = useState<PersonalDocument[]>([]);
+  const [uploadingCin, setUploadingCin] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const cinInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     fetchMe()
       .then((user) => {
         setFullName(user.fullName ?? "");
         setEmail(user.email ?? "");
         setPhone(user.phone ?? "");
+        setCinFileName(user.cinFileName ?? null);
+        setPersonalDocuments(user.personalDocuments ?? []);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }, []);
+
+  const rejectionToast = (reason: string) => {
+    toast({
+      variant: "destructive",
+      title: language === "fr" ? "Fichier refusé" : "الملف مرفوض",
+      description:
+        reason === "too_large"
+          ? (language === "fr" ? "Taille maximale : 10 MB." : "الحجم الأقصى: 10 ميغابايت.")
+          : (language === "fr" ? "Format non accepté." : "صيغة غير مقبولة."),
+    });
+  };
+
+  const handleCinSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reason = validateFile(file, CIN_UPLOAD_TYPES);
+    if (reason) return rejectionToast(reason);
+
+    setUploadingCin(true);
+    try {
+      const user = await uploadProfileCin(file);
+      setCinFileName(user.cinFileName ?? file.name);
+      toast({
+        title: language === "fr" ? "CIN enregistrée" : "تم حفظ البطاقة الوطنية",
+        description: file.name,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Échec de l'envoi" : "فشل الإرسال",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setUploadingCin(false);
+    }
+  };
+
+  const handleDocSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reason = validateFile(file);
+    if (reason) return rejectionToast(reason);
+
+    setUploadingDoc(true);
+    try {
+      const user = await uploadPersonalDocument(file);
+      setPersonalDocuments(user.personalDocuments ?? []);
+      toast({
+        title: language === "fr" ? "Document ajouté" : "تمت إضافة الوثيقة",
+        description: file.name,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Échec de l'envoi" : "فشل الإرسال",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -90,6 +171,110 @@ export default function Profile() {
                     {language === "fr" ? "Enregistré ✓" : "تم الحفظ ✓"}
                   </span>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{language === "fr" ? "Mes Documents" : "وثائقي"}</CardTitle>
+              <CardDescription>
+                {language === "fr"
+                  ? "Importez votre CIN et vos documents personnels (PDF ou image, 10 MB max)"
+                  : "استورد بطاقتك الوطنية ووثائقك الشخصية (PDF أو صورة، 10 ميغابايت كحد أقصى)"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Hidden file inputs */}
+              <input
+                ref={cinInputRef}
+                type="file"
+                accept=".png,.pdf,image/png,application/pdf"
+                className="hidden"
+                onChange={handleCinSelected}
+                data-testid="input-cin-file"
+              />
+              <input
+                ref={docInputRef}
+                type="file"
+                accept=".png,.pdf,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={handleDocSelected}
+                data-testid="input-personal-file"
+              />
+
+              {/* CIN */}
+              <div className="flex items-center gap-4 p-4 rounded-lg border bg-card">
+                <IdCard className="w-8 h-8 text-primary shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold">
+                    {language === "fr" ? "Carte d'Identité Nationale (CIN)" : "البطاقة الوطنية للتعريف"}
+                  </div>
+                  {cinFileName ? (
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                      <span className="truncate" title={cinFileName}>{cinFileName}</span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {language === "fr" ? "Aucun fichier importé (PNG ou PDF)" : "لم يتم استيراد أي ملف (PNG أو PDF)"}
+                    </div>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 shrink-0"
+                  disabled={uploadingCin || loading}
+                  onClick={() => cinInputRef.current?.click()}
+                  data-testid="button-upload-cin"
+                >
+                  {uploadingCin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  {cinFileName
+                    ? (language === "fr" ? "Remplacer" : "استبدال")
+                    : (language === "fr" ? "Importer" : "استيراد")}
+                </Button>
+              </div>
+
+              {/* Personal documents */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm font-semibold">
+                    {language === "fr" ? "Autres documents" : "وثائق أخرى"}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={uploadingDoc || loading}
+                    onClick={() => docInputRef.current?.click()}
+                    data-testid="button-upload-personal"
+                  >
+                    {uploadingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    {language === "fr" ? "Ajouter" : "إضافة"}
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {personalDocuments.map((doc) => (
+                    <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
+                      <FileText className="w-5 h-5 text-primary shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate" title={doc.name}>{doc.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {formatSize(doc.size)} · {new Date(doc.uploadedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 shrink-0">
+                        {language === "fr" ? "Importé" : "مستورد"}
+                      </Badge>
+                    </div>
+                  ))}
+                  {!personalDocuments.length && (
+                    <div className="text-sm text-muted-foreground text-center py-3 border rounded-lg border-dashed">
+                      {language === "fr" ? "Aucun document personnel." : "لا توجد وثائق شخصية."}
+                    </div>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>

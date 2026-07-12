@@ -16,9 +16,13 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String, default="")
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    cin_file_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # List of {id, name, size, mimeType, uploadedAt} entries; paths stay server-side.
+    personal_documents: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
 
     cases: Mapped[list["Case"]] = relationship(back_populates="user")
     audit_logs: Mapped[list["AuditLog"]] = relationship(back_populates="actor")
+    chat_messages: Mapped[list["ChatMessage"]] = relationship(back_populates="user")
 
 
 class Service(Base):
@@ -90,12 +94,19 @@ class ChatMessage(Base):
     case_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("cases.id"), index=True, nullable=True
     )
+    # Author of the message; scopes the standalone chat history per user.
+    user_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id"), index=True, nullable=True
+    )
+    # Groups messages into distinct conversations (single session for now).
+    session_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     sender: Mapped[str] = mapped_column(String)
     message: Mapped[str] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String, default="darija")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     case: Mapped[Case | None] = relationship(back_populates="chat_messages")
+    user: Mapped[User | None] = relationship(back_populates="chat_messages")
 
 
 class AuditLog(Base):

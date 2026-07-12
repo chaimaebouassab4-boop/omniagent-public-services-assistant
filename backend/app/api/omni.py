@@ -5,6 +5,7 @@ camelCase fields and numeric ids. This router serves that exact contract on the
 `/api/*` paths the frontend calls, backed by the existing SQLAlchemy models and
 the knowledge-base answer engine.
 """
+import io
 import re
 import uuid
 from datetime import datetime, timedelta
@@ -476,10 +477,38 @@ async def list_chat_messages(
     messages = (
         db.query(ChatMessage)
         .filter(ChatMessage.case_id.is_(None))
+        .filter(ChatMessage.user_id == current_user.id)
+        .filter(ChatMessage.sender != "document_context")
         .order_by(ChatMessage.created_at.asc())
         .all()
     )
     return [serialize_message(m, i + 1) for i, m in enumerate(messages)]
+
+
+def _standalone_count(db: Session, user_id: str) -> int:
+    return (
+        db.query(ChatMessage)
+        .filter(ChatMessage.case_id.is_(None))
+        .filter(ChatMessage.user_id == user_id)
+        .filter(ChatMessage.sender != "document_context")
+        .count()
+    )
+
+
+@router.delete("/chat/messages")
+async def clear_chat_messages(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Delete the current user's standalone chat history (incl. document context)."""
+    deleted = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.case_id.is_(None))
+        .filter(ChatMessage.user_id == current_user.id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"deleted": deleted}
 
 
 @router.post("/chat/messages", status_code=status.HTTP_201_CREATED)
@@ -490,20 +519,131 @@ async def send_chat_message(
 ) -> dict:
     language = body.language if body.language in MESSAGE_LANGUAGES else "darija"
 
-    user_msg = ChatMessage(case_id=None, sender="user", message=body.content, language=language)
+    user_msg = ChatMessage(
+        case_id=None, user_id=current_user.id, sender="user", message=body.content, language=language
+    )
     db.add(user_msg)
 
     service_id = detect_service_id(body.content)
     answer = answer_with_metadata(service_id=service_id, user_message=body.content)
     assistant_msg = ChatMessage(
-        case_id=None, sender="assistant", message=answer.answer, language=language
+        case_id=None,
+        user_id=current_user.id,
+        sender="assistant",
+        message=answer.answer,
+        language=language,
     )
     db.add(assistant_msg)
     db.commit()
     db.refresh(assistant_msg)
 
-    count = db.query(ChatMessage).filter(ChatMessage.case_id.is_(None)).count()
-    return serialize_message(assistant_msg, count)
+    return serialize_message(assistant_msg, _standalone_count(db, current_user.id))
+
+
+def _extract_pdf_text(data: bytes) -> tuple[str, int]:
+    """Best-effort PDF text extraction; returns (text, page_count)."""
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return "", 0
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+        return text, len(reader.pages)
+    except Exception:
+        return "", 0
+
+
+def _document_ack_message(name: str, text: str, pages: int, language: str) -> str:
+    if language == "fr":
+        if text:
+            return (
+                f"Document « {name} » bien reçu ({pages} page(s), {len(text)} caractères extraits). "
+                "Vous pouvez maintenant me poser vos questions à propos de ce document."
+            )
+        return (
+            f"Document « {name} » bien reçu. Aucun texte n'a pu être extrait automatiquement — "
+            "décrivez-moi son contenu ou posez directement votre question."
+        )
+    if text:
+        return (
+            f"توصلت بالوثيقة « {name} » ({pages} صفحة، {len(text)} حرف مستخرج). "
+            "دابا تقدر تسولني على هاد الوثيقة."
+        )
+    return (
+        f"توصلت بالوثيقة « {name} ». ما قدرتش نستخرج النص منها أوتوماتيكياً — "
+        "وصف ليا المحتوى ديالها ولا سول سؤالك مباشرة."
+    )
+
+
+@router.post("/chat/documents", status_code=status.HTTP_201_CREATED)
+async def upload_chat_document(
+    file: UploadFile = File(...),
+    language: str = Form(default="darija"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Upload a document into the standalone chat; extracts PDF text as context."""
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_UPLOAD_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PDF, JPEG, PNG or WebP files are accepted",
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File exceeds the 10 MB limit",
+        )
+
+    safe_name = _sanitize_filename(file.filename)
+    upload_dir = Path(settings.upload_root) / "chat" / current_user.id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    (upload_dir / f"{uuid.uuid4().hex}_{safe_name}").write_bytes(file_bytes)
+
+    extracted_text, page_count = ("", 0)
+    if content_type == "application/pdf":
+        extracted_text, page_count = _extract_pdf_text(file_bytes)
+
+    lang = language if language in MESSAGE_LANGUAGES else "darija"
+
+    # Visible user message rendered as an attachment in the thread.
+    db.add(
+        ChatMessage(
+            case_id=None,
+            user_id=current_user.id,
+            sender="user",
+            message=f"[Document] {safe_name}",
+            language=lang,
+        )
+    )
+    # Hidden context row (excluded from listings) kept for future RAG use.
+    if extracted_text:
+        db.add(
+            ChatMessage(
+                case_id=None,
+                user_id=current_user.id,
+                sender="document_context",
+                message=extracted_text[:20000],
+                language=lang,
+            )
+        )
+    assistant_msg = ChatMessage(
+        case_id=None,
+        user_id=current_user.id,
+        sender="assistant",
+        message=_document_ack_message(safe_name, extracted_text, page_count, lang),
+        language=lang,
+    )
+    db.add(assistant_msg)
+    db.commit()
+    db.refresh(assistant_msg)
+
+    return serialize_message(assistant_msg, _standalone_count(db, current_user.id))
 
 
 # --------------------------------------------------------------------------- #

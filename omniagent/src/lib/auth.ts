@@ -8,12 +8,22 @@
 const TOKEN_KEY = "omni_token";
 const USER_KEY = "omni_user";
 
+export interface PersonalDocument {
+  id: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  uploadedAt: string;
+}
+
 export interface AuthUser {
   id: string;
   email: string;
   fullName: string;
   phone: string | null;
   isAdmin: boolean;
+  cinFileName?: string | null;
+  personalDocuments?: PersonalDocument[];
 }
 
 interface AuthResponse {
