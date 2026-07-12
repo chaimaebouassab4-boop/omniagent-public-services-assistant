@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+pytest-tmp/
 
 # Local databases & uploads
 *.db
@@ -13,6 +14,10 @@ uploads/
 # Node
 node_modules/
 frontend/dist/
+omniagent/dist/
+
+# Local backup of the legacy frontend
+old fr/
 
 # Env & logs
 .env
