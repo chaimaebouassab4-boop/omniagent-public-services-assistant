@@ -127,6 +127,12 @@ def test_upload_cin_flow(client):
     me = client.get("/api/auth/me", headers=headers).json()
     assert me["cinFileName"] == "ma_cin.png"
 
+    preview = client.get("/api/users/me/documents/cin", headers=headers)
+    assert preview.status_code == 200
+    assert preview.content == b"png-bytes"
+    assert preview.headers["content-type"].startswith("image/png")
+    assert preview.headers["content-disposition"].startswith("inline;")
+
     # JPEG is not allowed for the CIN (PNG/PDF only)
     rejected = client.post(
         "/api/users/me/documents/cin",
@@ -222,6 +228,38 @@ def test_clear_chat_history_only_affects_current_user(client):
 
     assert client.get("/api/chat/messages", headers=headers_a).json() == []
     assert len(client.get("/api/chat/messages", headers=headers_b).json()) == 2
+
+
+def test_chat_sessions_preserve_previous_conversations(client):
+    headers = make_citizen(client, "sessions@demo.ma")
+
+    first = "conversation-one"
+    second = "conversation-two"
+    client.post(
+        "/api/chat/messages",
+        headers=headers,
+        json={"content": "Premier sujet", "language": "fr", "sessionId": first},
+    )
+    client.post(
+        "/api/chat/messages",
+        headers=headers,
+        json={"content": "Deuxième sujet", "language": "fr", "sessionId": second},
+    )
+
+    sessions = client.get("/api/chat/sessions", headers=headers).json()
+    assert {item["id"] for item in sessions} == {first, second}
+    assert next(item for item in sessions if item["id"] == first)["title"] == "Premier sujet"
+
+    first_history = client.get(
+        "/api/chat/messages", headers=headers, params={"sessionId": first}
+    ).json()
+    second_history = client.get(
+        "/api/chat/messages", headers=headers, params={"sessionId": second}
+    ).json()
+    assert len(first_history) == 2
+    assert len(second_history) == 2
+    assert first_history[0]["content"] == "Premier sujet"
+    assert second_history[0]["content"] == "Deuxième sujet"
 
 
 def test_chat_document_history_scoped_to_user(client):

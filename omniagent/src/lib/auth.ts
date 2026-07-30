@@ -7,6 +7,7 @@
  */
 const TOKEN_KEY = "omni_token";
 const USER_KEY = "omni_user";
+const AUTH_ROUTES = new Set(["/login", "/signup"]);
 
 export interface PersonalDocument {
   id: string;
@@ -32,7 +33,30 @@ interface AuthResponse {
 }
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return null;
+
+  try {
+    const payloadPart = token.split(".")[1];
+    if (!payloadPart) throw new Error("Malformed JWT");
+
+    const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(padded)) as { exp?: unknown };
+
+    if (
+      typeof payload.exp !== "number" ||
+      payload.exp <= Math.floor(Date.now() / 1000)
+    ) {
+      logout();
+      return null;
+    }
+  } catch {
+    logout();
+    return null;
+  }
+
+  return token;
 }
 
 export function getStoredUser(): AuthUser | null {
@@ -59,6 +83,18 @@ export function logout(): void {
   localStorage.removeItem(USER_KEY);
 }
 
+/** Clears a rejected session and sends the user to login once. */
+export function handleUnauthorized(status: number): boolean {
+  if (status !== 401 || !localStorage.getItem(TOKEN_KEY)) return false;
+
+  logout();
+  if (!AUTH_ROUTES.has(window.location.pathname)) {
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    window.location.assign(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+  }
+  return true;
+}
+
 async function apiRequest<T>(
   path: string,
   method: "GET" | "POST" | "PATCH",
@@ -76,6 +112,7 @@ async function apiRequest<T>(
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
+    handleUnauthorized(response.status);
     const message =
       (data && (data.detail || data.message)) || "Une erreur est survenue";
     throw new Error(typeof message === "string" ? message : "Une erreur est survenue");

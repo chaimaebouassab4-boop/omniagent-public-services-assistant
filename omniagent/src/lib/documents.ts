@@ -5,7 +5,7 @@
  * plain fetch with FormData. The Bearer token is attached manually, matching
  * the behaviour of the generated client's auth getter.
  */
-import { getToken, type AuthUser } from "@/lib/auth";
+import { getToken, handleUnauthorized, type AuthUser } from "@/lib/auth";
 import type { Document, Message } from "@workspace/api-client-react";
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // keep in sync with backend
@@ -37,10 +37,25 @@ async function postMultipart<T>(path: string, formData: FormData): Promise<T> {
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
+    handleUnauthorized(response.status);
     const detail = data && typeof data.detail === "string" ? data.detail : null;
     throw new Error(detail ?? `Upload failed (HTTP ${response.status})`);
   }
   return data as T;
+}
+
+export async function fetchCinPreview(): Promise<Blob> {
+  const token = getToken();
+  const response = await fetch("/api/users/me/documents/cin", {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) {
+    handleUnauthorized(response.status);
+    const data = await response.json().catch(() => null);
+    const detail = data && typeof data.detail === "string" ? data.detail : null;
+    throw new Error(detail ?? `Preview failed (HTTP ${response.status})`);
+  }
+  return response.blob();
 }
 
 export async function uploadDocument(
@@ -69,9 +84,14 @@ export async function uploadPersonalDocument(file: File): Promise<AuthUser> {
 }
 
 /** Sends a document into the standalone chat; returns the assistant acknowledgement. */
-export async function uploadChatDocument(file: File, language = "darija"): Promise<Message> {
+export async function uploadChatDocument(
+  file: File,
+  language = "darija",
+  sessionId?: string,
+): Promise<Message> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("language", language);
+  if (sessionId) formData.append("sessionId", sessionId);
   return postMultipart<Message>("/api/chat/documents", formData);
 }

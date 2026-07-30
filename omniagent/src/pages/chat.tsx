@@ -1,56 +1,52 @@
 import { useI18n } from "@/lib/i18n";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useListChatMessages, useSendChatMessage, getListChatMessagesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus } from "lucide-react";
+import { Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus, History } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { uploadChatDocument, validateFile } from "@/lib/documents";
-import { clearChatHistory } from "@/lib/chat";
+import { listChatSessions, listSessionMessages, sendSessionMessage } from "@/lib/chat";
 
 const DOCUMENT_PREFIX = "[Document] ";
 
 export default function Chat() {
   const { t, language, isRtl } = useI18n();
-  const { data: messages } = useListChatMessages();
-  const sendChatMessage = useSendChatMessage();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const [activeSessionId, setActiveSessionId] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [isUploading, setIsUploading] = useState(false);
-  const [isClearing, setIsClearing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleNewConversation = async () => {
-    if (!messages?.length) return;
-    const confirmText = language === "fr"
-      ? "Commencer une nouvelle discussion ? L'historique actuel sera effacé."
-      : "بغيتي تبدا محادثة جديدة؟ غادي يتمسح السجل الحالي.";
-    if (!window.confirm(confirmText)) return;
+  const { data: sessions = [], isSuccess: sessionsLoaded } = useQuery({
+    queryKey: ["chat-sessions"],
+    queryFn: listChatSessions,
+  });
+  const { data: messages = [] } = useQuery({
+    queryKey: ["chat-messages", activeSessionId],
+    queryFn: () => listSessionMessages(activeSessionId),
+    enabled: Boolean(activeSessionId),
+  });
+  const sendChatMessage = useMutation({
+    mutationFn: (content: string) =>
+      sendSessionMessage(activeSessionId, content, language as "ar" | "fr" | "darija"),
+  });
 
-    setIsClearing(true);
-    try {
-      await clearChatHistory();
-      queryClient.invalidateQueries({ queryKey: getListChatMessagesQueryKey() });
-      toast({
-        title: language === "fr" ? "Nouvelle discussion" : "محادثة جديدة",
-        description: language === "fr" ? "L'historique a été effacé." : "تم مسح السجل.",
-      });
-    } catch (err) {
-      toast({
-        variant: "destructive",
-        title: language === "fr" ? "Échec" : "فشل",
-        description: err instanceof Error ? err.message : undefined,
-      });
-    } finally {
-      setIsClearing(false);
+  useEffect(() => {
+    if (sessionsLoaded && !activeSessionId) {
+      setActiveSessionId(sessions[0]?.id ?? crypto.randomUUID());
     }
+  }, [sessions, sessionsLoaded, activeSessionId]);
+
+  const handleNewConversation = () => {
+    setActiveSessionId(crypto.randomUUID());
+    setMessageInput("");
   };
 
   useEffect(() => {
@@ -79,8 +75,9 @@ export default function Chat() {
 
     setIsUploading(true);
     try {
-      await uploadChatDocument(file, language);
-      queryClient.invalidateQueries({ queryKey: getListChatMessagesQueryKey() });
+      await uploadChatDocument(file, language, activeSessionId);
+      queryClient.invalidateQueries({ queryKey: ["chat-messages", activeSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
     } catch (err) {
       toast({
         variant: "destructive",
@@ -97,11 +94,12 @@ export default function Chat() {
     if (!messageInput.trim()) return;
 
     sendChatMessage.mutate(
-      { data: { content: messageInput, language: language as "ar"|"fr"|"darija" } },
+      messageInput,
       {
         onSuccess: () => {
           setMessageInput("");
-          queryClient.invalidateQueries({ queryKey: getListChatMessagesQueryKey() });
+          queryClient.invalidateQueries({ queryKey: ["chat-messages", activeSessionId] });
+          queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
         }
       }
     );
@@ -113,23 +111,63 @@ export default function Chat() {
 
   return (
     <AppLayout>
-      <div className="max-w-4xl mx-auto h-[calc(100vh-80px)] flex flex-col">
+      <div className="max-w-6xl mx-auto h-[calc(100vh-80px)] flex flex-col">
         <div className={`mb-4 shrink-0 flex items-center justify-between ${isRtl ? "flex-row-reverse" : ""}`}>
           <h1 className="text-3xl font-bold text-foreground">{t("nav.chat")}</h1>
           <Button
             variant="outline"
             size="sm"
             className="gap-1.5"
-            disabled={isClearing || !messages?.length}
             onClick={handleNewConversation}
             data-testid="button-new-conversation"
           >
-            {isClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquarePlus className="w-4 h-4" />}
+            <MessageSquarePlus className="w-4 h-4" />
             {language === "fr" ? "Nouvelle discussion" : "محادثة جديدة"}
           </Button>
         </div>
 
-        <Card className="flex-1 flex flex-col min-h-0 overflow-hidden shadow-sm">
+        <div className="flex-1 min-h-0 grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
+          <Card className="flex max-h-44 min-h-0 flex-col overflow-hidden md:max-h-none">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <History className="w-4 h-4" />
+                {language === "fr" ? "Historique" : "سجل المحادثات"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
+              <div className="space-y-2">
+                {sessions.map((session) => (
+                  <button
+                    key={session.id}
+                    type="button"
+                    onClick={() => setActiveSessionId(session.id)}
+                    className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                      activeSessionId === session.id
+                        ? "border-primary bg-primary/10"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    <div className="truncate text-sm font-medium">{session.title}</div>
+                    <div className="mt-1 truncate text-xs text-muted-foreground">
+                      {session.preview}
+                    </div>
+                    <div className="mt-2 text-[11px] text-muted-foreground">
+                      {new Date(session.updatedAt).toLocaleDateString(
+                        language === "fr" ? "fr-FR" : "ar-MA",
+                      )}
+                    </div>
+                  </button>
+                ))}
+                {!sessions.length && (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    {language === "fr" ? "Aucune ancienne conversation." : "لا توجد محادثات سابقة."}
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="flex flex-col min-h-0 overflow-hidden shadow-sm">
           <CardContent className="flex-1 flex flex-col p-0 overflow-hidden bg-muted/10">
             <ScrollArea className="flex-1 p-6" viewportRef={scrollRef}>
               <div className="space-y-6">
@@ -221,7 +259,8 @@ export default function Chat() {
               </form>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       </div>
     </AppLayout>
   );

@@ -1,11 +1,21 @@
 import { ReactNode } from "react";
 import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  MutationCache,
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/lib/i18n";
-import { getToken, getStoredUser, isAuthenticated } from "@/lib/auth";
+import {
+  getToken,
+  getStoredUser,
+  handleUnauthorized,
+  isAuthenticated,
+} from "@/lib/auth";
 import NotFound from "@/pages/not-found";
 
 // Attach the stored JWT (if any) as a Bearer token on every API request.
@@ -21,7 +31,36 @@ import Chat from "@/pages/chat";
 import Profile from "@/pages/profile";
 import Admin from "@/pages/admin";
 
-const queryClient = new QueryClient();
+function handleApiError(error: unknown): void {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof error.status === "number"
+  ) {
+    handleUnauthorized(error.status);
+  }
+}
+
+const queryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: handleApiError }),
+  mutationCache: new MutationCache({ onError: handleApiError }),
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "status" in error &&
+          error.status === 401
+        ) {
+          return false;
+        }
+        return failureCount < 2;
+      },
+    },
+  },
+});
 
 /** Renders children only for authenticated users; otherwise redirects to /login. */
 function Protected({ children, adminOnly = false }: { children: ReactNode; adminOnly?: boolean }) {

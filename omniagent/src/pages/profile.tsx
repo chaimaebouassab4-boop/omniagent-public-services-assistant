@@ -9,10 +9,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { LogOut, IdCard, FileText, Upload, Loader2, CheckCircle2 } from "lucide-react";
+import { LogOut, IdCard, FileText, Upload, Loader2, CheckCircle2, Eye } from "lucide-react";
 import { fetchMe, updateMe, logout, isAuthenticated, type PersonalDocument } from "@/lib/auth";
-import { uploadProfileCin, uploadPersonalDocument, validateFile, CIN_UPLOAD_TYPES } from "@/lib/documents";
+import { fetchCinPreview, uploadProfileCin, uploadPersonalDocument, validateFile, CIN_UPLOAD_TYPES } from "@/lib/documents";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 function formatSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -34,6 +41,9 @@ export default function Profile() {
   const [cinFileName, setCinFileName] = useState<string | null>(null);
   const [personalDocuments, setPersonalDocuments] = useState<PersonalDocument[]>([]);
   const [uploadingCin, setUploadingCin] = useState(false);
+  const [viewingCin, setViewingCin] = useState(false);
+  const [cinPreviewUrl, setCinPreviewUrl] = useState<string | null>(null);
+  const [cinPreviewType, setCinPreviewType] = useState("");
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const cinInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
@@ -113,6 +123,30 @@ export default function Profile() {
       setUploadingDoc(false);
     }
   };
+
+  const handleViewCin = async () => {
+    setViewingCin(true);
+    try {
+      const blob = await fetchCinPreview();
+      if (cinPreviewUrl) URL.revokeObjectURL(cinPreviewUrl);
+      setCinPreviewType(blob.type);
+      setCinPreviewUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Impossible d'afficher la CIN" : "تعذر عرض البطاقة الوطنية",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setViewingCin(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (cinPreviewUrl) URL.revokeObjectURL(cinPreviewUrl);
+    };
+  }, [cinPreviewUrl]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -221,19 +255,34 @@ export default function Profile() {
                     </div>
                   )}
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 shrink-0"
-                  disabled={uploadingCin || loading}
-                  onClick={() => cinInputRef.current?.click()}
-                  data-testid="button-upload-cin"
-                >
-                  {uploadingCin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                  {cinFileName
-                    ? (language === "fr" ? "Remplacer" : "استبدال")
-                    : (language === "fr" ? "Importer" : "استيراد")}
-                </Button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {cinFileName && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={viewingCin || loading}
+                      onClick={handleViewCin}
+                      data-testid="button-view-cin"
+                    >
+                      {viewingCin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                      {language === "fr" ? "Voir" : "عرض"}
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={uploadingCin || loading}
+                    onClick={() => cinInputRef.current?.click()}
+                    data-testid="button-upload-cin"
+                  >
+                    {uploadingCin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    {cinFileName
+                      ? (language === "fr" ? "Remplacer" : "استبدال")
+                      : (language === "fr" ? "Importer" : "استيراد")}
+                  </Button>
+                </div>
               </div>
 
               {/* Personal documents */}
@@ -328,6 +377,39 @@ export default function Profile() {
           </Card>
         </div>
       </div>
+      <Dialog
+        open={Boolean(cinPreviewUrl)}
+        onOpenChange={(open) => {
+          if (!open && cinPreviewUrl) {
+            URL.revokeObjectURL(cinPreviewUrl);
+            setCinPreviewUrl(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>
+              {language === "fr" ? "Carte d'Identité Nationale (CIN)" : "البطاقة الوطنية للتعريف"}
+            </DialogTitle>
+            <DialogDescription>{cinFileName}</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-auto rounded-lg border bg-muted/20">
+            {cinPreviewUrl && cinPreviewType === "application/pdf" ? (
+              <iframe
+                src={cinPreviewUrl}
+                title={cinFileName ?? "CIN"}
+                className="w-full h-full min-h-[60vh]"
+              />
+            ) : cinPreviewUrl ? (
+              <img
+                src={cinPreviewUrl}
+                alt={language === "fr" ? "Aperçu de la CIN" : "معاينة البطاقة الوطنية"}
+                className="w-full h-full object-contain"
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

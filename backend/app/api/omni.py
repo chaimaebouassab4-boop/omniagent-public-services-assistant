@@ -85,6 +85,7 @@ class UpdateCaseBody(BaseModel):
 class SendMessageBody(BaseModel):
     content: str
     language: str = "darija"
+    sessionId: str | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -471,9 +472,30 @@ def detect_service_id(message: str) -> str:
 
 @router.get("/chat/messages")
 async def list_chat_messages(
+    sessionId: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[dict]:
+    query = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.case_id.is_(None))
+        .filter(ChatMessage.user_id == current_user.id)
+        .filter(ChatMessage.sender != "document_context")
+    )
+    if sessionId == "legacy":
+        query = query.filter(ChatMessage.session_id.is_(None))
+    elif sessionId:
+        query = query.filter(ChatMessage.session_id == sessionId)
+    messages = query.order_by(ChatMessage.created_at.asc()).all()
+    return [serialize_message(m, i + 1) for i, m in enumerate(messages)]
+
+
+@router.get("/chat/sessions")
+async def list_chat_sessions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """List the user's conversations, newest first, without exposing other users' data."""
     messages = (
         db.query(ChatMessage)
         .filter(ChatMessage.case_id.is_(None))
@@ -482,17 +504,37 @@ async def list_chat_messages(
         .order_by(ChatMessage.created_at.asc())
         .all()
     )
-    return [serialize_message(m, i + 1) for i, m in enumerate(messages)]
+    grouped: dict[str, list[ChatMessage]] = {}
+    for message in messages:
+        grouped.setdefault(message.session_id or "legacy", []).append(message)
+
+    sessions = []
+    for session_id, rows in grouped.items():
+        first_user = next((row for row in rows if row.sender == "user"), rows[0])
+        title = first_user.message.removeprefix("[Document] ").strip()
+        sessions.append(
+            {
+                "id": session_id,
+                "title": title[:70] or "Conversation",
+                "preview": rows[-1].message[:100],
+                "messageCount": len(rows),
+                "createdAt": rows[0].created_at.isoformat(),
+                "updatedAt": rows[-1].created_at.isoformat(),
+            }
+        )
+    return sorted(sessions, key=lambda item: item["updatedAt"], reverse=True)
 
 
-def _standalone_count(db: Session, user_id: str) -> int:
-    return (
+def _standalone_count(db: Session, user_id: str, session_id: str | None = None) -> int:
+    query = (
         db.query(ChatMessage)
         .filter(ChatMessage.case_id.is_(None))
         .filter(ChatMessage.user_id == user_id)
         .filter(ChatMessage.sender != "document_context")
-        .count()
     )
+    if session_id:
+        query = query.filter(ChatMessage.session_id == session_id)
+    return query.count()
 
 
 @router.delete("/chat/messages")
@@ -518,9 +560,11 @@ async def send_chat_message(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     language = body.language if body.language in MESSAGE_LANGUAGES else "darija"
+    session_id = body.sessionId or uuid.uuid4().hex
 
     user_msg = ChatMessage(
-        case_id=None, user_id=current_user.id, sender="user", message=body.content, language=language
+        case_id=None, user_id=current_user.id, session_id=session_id,
+        sender="user", message=body.content, language=language
     )
     db.add(user_msg)
 
@@ -529,6 +573,7 @@ async def send_chat_message(
     assistant_msg = ChatMessage(
         case_id=None,
         user_id=current_user.id,
+        session_id=session_id,
         sender="assistant",
         message=answer.answer,
         language=language,
@@ -537,7 +582,7 @@ async def send_chat_message(
     db.commit()
     db.refresh(assistant_msg)
 
-    return serialize_message(assistant_msg, _standalone_count(db, current_user.id))
+    return serialize_message(assistant_msg, _standalone_count(db, current_user.id, session_id))
 
 
 def _extract_pdf_text(data: bytes) -> tuple[str, int]:
@@ -580,6 +625,7 @@ def _document_ack_message(name: str, text: str, pages: int, language: str) -> st
 async def upload_chat_document(
     file: UploadFile = File(...),
     language: str = Form(default="darija"),
+    sessionId: str | None = Form(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -610,12 +656,14 @@ async def upload_chat_document(
         extracted_text, page_count = _extract_pdf_text(file_bytes)
 
     lang = language if language in MESSAGE_LANGUAGES else "darija"
+    session_id = sessionId or uuid.uuid4().hex
 
     # Visible user message rendered as an attachment in the thread.
     db.add(
         ChatMessage(
             case_id=None,
             user_id=current_user.id,
+            session_id=session_id,
             sender="user",
             message=f"[Document] {safe_name}",
             language=lang,
@@ -627,6 +675,7 @@ async def upload_chat_document(
             ChatMessage(
                 case_id=None,
                 user_id=current_user.id,
+                session_id=session_id,
                 sender="document_context",
                 message=extracted_text[:20000],
                 language=lang,
@@ -635,6 +684,7 @@ async def upload_chat_document(
     assistant_msg = ChatMessage(
         case_id=None,
         user_id=current_user.id,
+        session_id=session_id,
         sender="assistant",
         message=_document_ack_message(safe_name, extracted_text, page_count, lang),
         language=lang,
@@ -643,7 +693,7 @@ async def upload_chat_document(
     db.commit()
     db.refresh(assistant_msg)
 
-    return serialize_message(assistant_msg, _standalone_count(db, current_user.id))
+    return serialize_message(assistant_msg, _standalone_count(db, current_user.id, session_id))
 
 
 # --------------------------------------------------------------------------- #

@@ -18,6 +18,11 @@ export default function Login() {
   const [error, setError] = useState("");
 
   const Arrow = isRtl ? ArrowLeft : ArrowRight;
+  const requestedPath = new URLSearchParams(window.location.search).get("returnTo");
+  const safeReturnPath =
+    requestedPath?.startsWith("/") && !requestedPath.startsWith("//")
+      ? requestedPath
+      : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +30,7 @@ export default function Login() {
     setError("");
     try {
       const user = await login(email, password);
-      setLocation(user.isAdmin ? "/admin" : "/dashboard");
+      setLocation(safeReturnPath ?? (user.isAdmin ? "/admin" : "/dashboard"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Échec de la connexion");
     } finally {

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -164,6 +165,25 @@ def _profile_dir(user_id: str) -> Path:
     directory = Path(settings.upload_root) / "profiles" / user_id
     directory.mkdir(parents=True, exist_ok=True)
     return directory
+
+
+@router.get("/users/me/documents/cin")
+async def view_cin(current_user: User = Depends(get_current_user)) -> FileResponse:
+    """Return the authenticated user's CIN for an inline preview."""
+    if not current_user.cin_file_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No CIN uploaded")
+
+    stored_path = Path(current_user.cin_file_path)
+    if not stored_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="CIN file not found")
+
+    original_name = stored_path.name.split("_", 1)[-1]
+    media_type = "application/pdf" if stored_path.suffix.lower() == ".pdf" else "image/png"
+    return FileResponse(
+        path=stored_path,
+        media_type=media_type,
+        headers={"Content-Disposition": f'inline; filename="{original_name}"'},
+    )
 
 
 @router.post("/users/me/documents/cin", status_code=status.HTTP_201_CREATED)
