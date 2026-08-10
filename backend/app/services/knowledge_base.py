@@ -197,9 +197,27 @@ def _structured_fallback(user_message: str, knowledge: dict[str, Any]) -> str | 
     return None
 
 
-def answer_with_metadata(service_id: str, user_message: str) -> KnowledgeAnswer:
+def answer_with_metadata(service_id: str, user_message: str, use_rag: bool = True) -> KnowledgeAnswer:
     """Return the best KB answer with confidence score and source files."""
     canonical_service_id = normalize_service_id(service_id)
+
+    # Try querying the RAG pipeline first if available
+    if use_rag:
+        try:
+            from app.rag_service import get_rag_engine
+            engine = get_rag_engine()
+            if engine.initialized:
+                rag_res = engine.query(user_query=user_message, service_type=canonical_service_id)
+                if rag_res.get("confidence", 0.0) >= LOW_CONFIDENCE_THRESHOLD and not rag_res.get("fallback_reason"):
+                    return KnowledgeAnswer(
+                        answer=rag_res.get("answer", ""),
+                        confidence=rag_res.get("confidence", 0.85),
+                        sources=rag_res.get("sources", []),
+                        matched_question=None
+                    )
+        except Exception as e:
+            pass
+
     sources = _source_label(canonical_service_id)
     knowledge = load_service_knowledge(service_id)
     if not knowledge:

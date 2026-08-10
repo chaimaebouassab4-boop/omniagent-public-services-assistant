@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # `cases` and `chat` implement the original enveloped API and are kept for
 # reference; the omniagent frontend is served by the `omni` router below.
-from app.api import auth, health, omni  # noqa: F401
+from app.api import auth, chat, health, omni  # noqa: F401
 from app.core.config import settings
 from app.core.seed_services import seed_admin, seed_services
 from app.db.database import Base, SessionLocal, engine
@@ -19,6 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(chat.router)
 app.include_router(omni.router)
 app.include_router(health.router)
 

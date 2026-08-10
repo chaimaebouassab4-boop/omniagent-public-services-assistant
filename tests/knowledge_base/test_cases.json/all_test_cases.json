@@ -1,92 +1,282 @@
 [
   {
+    "id": 1,
     "query": "شنو الوثائق المطلوبة لشهادة السكنى إلا كنت مستأجر؟",
     "expected_answer": "عقد الكراء مصادق عليه، نسخة CNIE، فاتورة حديثة باسم صاحب السكن أو توصيل كراء، تصريح بالشرف إلا لزم، طوابع 20 درهم.",
     "service_type": "residence",
+    "expected_source": "residence_certificate.json",
     "category": "documents"
   },
   {
+    "id": 2,
     "query": "كم الرسوم ديال شهادة السكنى؟",
     "expected_answer": "حوالي 20 درهم (طوابع ضريبية).",
     "service_type": "residence",
+    "expected_source": "residence_certificate.json",
     "category": "fees"
   },
   {
+    "id": 3,
     "query": "هل خاص المقدم يجي يزور الدار باش يعطي شهادة السكنى؟",
     "expected_answer": "نعم، في أغلب الحالات خاصة القروي أو سكن مع عائلة، يقوم المقدم أو الشرطة بمعاينة ميدانية.",
     "service_type": "residence",
+    "expected_source": "residence_certificate.json",
     "category": "procedure"
   },
   {
-    "query": "كيفاش نطلب عقد الازدياد أونلاين؟",
-    "expected_answer": "عبر المنصة الرسمية watiqa.ma: تسجل، تختار Extrait أو Copie intégrale، تدخل البيانات (CIN، تاريخ الازدياد، أسماء الوالدين)، تدفع، ويوصلك بالبريد.",
-    "service_type": "birth",
-    "category": "procedure_online"
-  },
-  {
-    "query": "شنو الفرق بين المستخرج والنسخة الكاملة ديال عقد الازدياد؟",
-    "expected_answer": "المستخرج (Extrait): معلومات أساسية فقط. النسخة الكاملة (Copie intégrale): كل التفاصيل مع الهوامش والتعديلات.",
-    "service_type": "birth",
-    "category": "types"
-  },
-  {
-    "query": "كم مدة الاستلام إلا طلب عقد الازدياد أونلاين؟",
-    "expected_answer": "عادة 4-15 يوم عمل حسب العنوان والمنطقة، يمكن تتبع الطلب في watiqa.ma.",
-    "service_type": "birth",
-    "category": "timeline"
-  },
-  {
-    "query": "شنو الوثائق المطلوبة لعقد الزواج؟",
-    "expected_answer": "نسخة كاملة من عقد الازدياد، CNIE، شهادة طبية، شهادة عزوبية أو طلاق، صور شمسية، طوابع، موافقة الولي للمرأة البكر، إذن قضائي إلا تعدد زوجات.",
-    "service_type": "marriage",
-    "category": "documents"
-  },
-  {
-    "query": "كم الرسوم ديال عقد الزواج؟",
-    "expected_answer": "متفاوتة: 200-500 درهم لأتعاب العدول + طوابع + مصاريف إدارية، قد تزيد في حالات خاصة.",
-    "service_type": "marriage",
-    "category": "fees"
-  },
-  {
-    "query": "خاص الولي للمرأة في عقد الزواج؟",
-    "expected_answer": "نعم للبكر، إلا إذن قضائي. الولي غالباً الأب أو الجد أو الأخ.",
-    "service_type": "marriage",
-    "category": "conditions"
-  },
-  {
-    "query": "شنو السن القانوني للزواج في المغرب؟",
-    "expected_answer": "18 سنة كاملة للطرفين، إلا إذن استثنائي من قاضي الأسرة.",
-    "service_type": "marriage",
-    "category": "conditions"
-  },
-  {
-    "query": "هل يمكن طلب شهادة السكنى أونلاين؟",
-    "expected_answer": "لا، حالياً (2026) الإجراء حضوري فقط في الملحقة أو القيادة.",
-    "service_type": "residence",
-    "category": "procedure"
-  },
-  {
-    "query": "إلا الاسم في عقد الازدياد غلط، شنو نعمل؟",
-    "expected_answer": "تقدم طلب تصحيح في المحكمة الابتدائية مع وثائق إثبات، ثم تعيد طلب النسخة المصححة.",
-    "service_type": "birth",
-    "category": "errors"
-  },
-  {
-    "query": "هل يمكن تعدد الزوجات في المغرب؟",
-    "expected_answer": "نعم بشروط صارمة: إذن قضائي + موافقة الزوجة الأولى + إثبات القدرة المالية والعادلة.",
-    "service_type": "marriage",
-    "category": "conditions"
-  },
-  {
-    "query": "فين نروح نبداو عقد الزواج في طنجة؟",
-    "expected_answer": "عند عدول معتمدين، ثم قاضي الأسرة في المحكمة الابتدائية التابعة لمنطقتك.",
-    "service_type": "marriage",
-    "category": "location"
-  },
-  {
+    "id": 4,
     "query": "شنو نعمل إلا ما عنديش فاتورة لشهادة السكنى؟",
     "expected_answer": "قدم تصريح بالشرف من صاحب السكن + CNIE ديالو + فاتورة باسمه، وغالباً يطلبون زيارة ميدانية.",
     "service_type": "residence",
+    "expected_source": "residence_certificate.json",
     "category": "documents"
+  },
+  {
+    "id": 5,
+    "query": "هل يمكن طلب شهادة السكنى أونلاين؟",
+    "expected_answer": "لا، حالياً الإجراء حضوري فقط في الملحقة الإدارية أو القيادة أو دوائر الشرطة.",
+    "service_type": "residence",
+    "expected_source": "residence_certificate.json",
+    "category": "procedure"
+  },
+  {
+    "id": 6,
+    "query": "كيفاش نطلب عقد الازدياد أونلاين؟",
+    "expected_answer": "عبر المنصة الرسمية watiqa.ma: تسجل، تختار Extrait أو Copie intégrale، تدخل البيانات، تدفع، ويوصلك بالبريد.",
+    "service_type": "birth",
+    "expected_source": "birth_certificate.json",
+    "category": "procedure_online"
+  },
+  {
+    "id": 7,
+    "query": "شنو الفرق بين المستخرج والنسخة الكاملة ديال عقد الازدياد؟",
+    "expected_answer": "المستخرج (Extrait): معلومات أساسية فقط. النسخة الكاملة (Copie intégrale): كل التفاصيل مع الهوامش والتعديلات.",
+    "service_type": "birth",
+    "expected_source": "birth_certificate.json",
+    "category": "types"
+  },
+  {
+    "id": 8,
+    "query": "كم مدة الاستلام إلا طلب عقد الازدياد أونلاين؟",
+    "expected_answer": "عادة 4-15 يوم عمل حسب العنوان والمنطقة، يمكن تتبع الطلب في watiqa.ma.",
+    "service_type": "birth",
+    "expected_source": "birth_certificate.json",
+    "category": "timeline"
+  },
+  {
+    "id": 9,
+    "query": "إلا الاسم في عقد الازدياد غلط، شنو نعمل؟",
+    "expected_answer": "تقدم طلب تصحيح في المحكمة الابتدائية مع وثائق إثبات، ثم تعيد طلب النسخة المصححة.",
+    "service_type": "birth",
+    "expected_source": "birth_certificate.json",
+    "category": "errors"
+  },
+  {
+    "id": 10,
+    "query": "شنو الوثائق المطلوبة لعقد الزواج؟",
+    "expected_answer": "نسخة كاملة من عقد الازدياد، CNIE، شهادة طبية، شهادة عزوبية أو طلاق، صور شمسية، طوابع وموافقة الولي للبكر.",
+    "service_type": "marriage",
+    "expected_source": "marriage_certificate.json",
+    "category": "documents"
+  },
+  {
+    "id": 11,
+    "query": "كم الرسوم ديال عقد الزواج؟",
+    "expected_answer": "متفاوتة: 200-500 درهم لأتعاب العدول + طوابع + مصاريف إدارية.",
+    "service_type": "marriage",
+    "expected_source": "marriage_certificate.json",
+    "category": "fees"
+  },
+  {
+    "id": 12,
+    "query": "شنو السن القانوني للزواج في المغرب؟",
+    "expected_answer": "18 سنة كاملة للطرفين، إلا إذن استثنائي من قاضي الأسرة.",
+    "service_type": "marriage",
+    "expected_source": "marriage_certificate.json",
+    "category": "conditions"
+  },
+  {
+    "id": 13,
+    "query": "خاص الولي للمرأة في عقد الزواج؟",
+    "expected_answer": "نعم للبكر، إلا إذن قضائي. الولي غالباً الأب أو الجد أو الأخ.",
+    "service_type": "marriage",
+    "expected_source": "marriage_certificate.json",
+    "category": "conditions"
+  },
+  {
+    "id": 14,
+    "query": "هل يمكن تعدد الزوجات في المغرب؟",
+    "expected_answer": "نعم بشروط صارمة: إذن قضائي + موافقة الزوجة الأولى + إثبات القدرة المالية والعدل.",
+    "service_type": "marriage",
+    "expected_source": "marriage_certificate.json",
+    "category": "conditions"
+  },
+  {
+    "id": 15,
+    "query": "من يقدر يصرح بالوفاة وكم الأجل القانوني؟",
+    "expected_answer": "الولد أو الزوج أو الأب أو الأخ، والأجل القانوني هو 30 يوماً من تاريخ الوفاة.",
+    "service_type": "death",
+    "expected_source": "death_certificate_extract.json",
+    "category": "procedure"
+  },
+  {
+    "id": 16,
+    "query": "شنو الوثائق المطلوبة لمستخرج شهادة الوفاة؟",
+    "expected_answer": "شهادة معاينة الوفاة من الطبيب، الدفتر العائلي أو عقد الازدياد، وبطاقة التعريف الوطنية للمتوفى والمصرح.",
+    "service_type": "death",
+    "expected_source": "death_certificate_extract.json",
+    "category": "documents"
+  },
+  {
+    "id": 17,
+    "query": "واش ضروري نحضر شخصيا باش ناخد شهادة الحياة؟",
+    "expected_answer": "نعم الحضور الشخصي ضروري للمقاطعة، إلا في حالة العجز أو المرض المبرر بشهادة طبية.",
+    "service_type": "life",
+    "expected_source": "life_certificate.json",
+    "category": "procedure"
+  },
+  {
+    "id": 18,
+    "query": "شنو الوثائق المطلوبة لشهادة الحياة؟",
+    "expected_answer": "البطاقة الوطنية للتعريف الإلكترونية CNIE والدفتر العائلي أو كناش الحالة المدنية.",
+    "service_type": "life",
+    "expected_source": "life_certificate.json",
+    "category": "documents"
+  },
+  {
+    "id": 19,
+    "query": "شنو هما الوثائق المطلوبة لشهادة العزوبة؟",
+    "expected_answer": "تصريح بالشرف مصادق عليه، نسخة CNIE، نسخة كاملة من عقد الازدياد حديثة أقل من 3 أشهر.",
+    "service_type": "single_status",
+    "expected_source": "single_status_certificate.json",
+    "category": "documents"
+  },
+  {
+    "id": 20,
+    "query": "شحال كتاخد ديال الوقت شهادة العزوبة؟",
+    "expected_answer": "غالبا من يومين حتى 4 أيام على حسب البحث الميداني لعون السلطة المقدم.",
+    "service_type": "single_status",
+    "expected_source": "single_status_certificate.json",
+    "category": "timeline"
+  },
+  {
+    "id": 21,
+    "query": "واش نقدر ناخد شهادة العزوبة أونلاين؟",
+    "expected_answer": "لا، حاليا تتطلب الحضور شخصيا للمقاطعة لأنها تحتاج بحثا ميدانيا من عون السلطة.",
+    "service_type": "single_status",
+    "expected_source": "single_status_certificate.json",
+    "category": "procedure"
+  },
+  {
+    "id": 22,
+    "query": "واش ضروري نمشي لدار الضريبة باش ناخد شهادة عدم الملكية؟",
+    "expected_answer": "نعم ضروري الحصول على شهادة عدم الخضوع للضريبة Non-imposition من إدارة الضرائب كإثبات أولي.",
+    "service_type": "non_property",
+    "expected_source": "non_property_certificate.json",
+    "category": "procedure"
+  },
+  {
+    "id": 23,
+    "query": "شنو هما الوثائق المطلوبة لشهادة عدم الملكية؟",
+    "expected_answer": "نسخة البطاقة الوطنية، تصريح بالشرف بعدم الملكية، وشهادة عدم الخضوع للضريبة من دار الضريبة.",
+    "service_type": "non_property",
+    "expected_source": "non_property_certificate.json",
+    "category": "documents"
+  },
+  {
+    "id": 24,
+    "query": "فاش كنحتاج الشهادة الإدارية للزواج؟",
+    "expected_answer": "يطلبها العدول مع ملف الزواج لإثبات الحالة العائلية عازب أو مطلق أو أرمل من سجلات السلطة المحلية.",
+    "service_type": "administrative",
+    "expected_source": "administrative_certificate.json",
+    "category": "usage"
+  },
+  {
+    "id": 25,
+    "query": "واش ضروري المقدم يدير بحث باش يعطيوها ليا الشهادة الإدارية؟",
+    "expected_answer": "نعم الشهادة الإدارية تبنى أساسا على البحث الميداني لعون السلطة المقدم للتأكد من المعطيات.",
+    "service_type": "administrative",
+    "expected_source": "administrative_certificate.json",
+    "category": "procedure"
+  },
+  {
+    "id": 26,
+    "query": "شنو الفرق بين حسن السيرة والسجل العدلي؟",
+    "expected_answer": "حسن السيرة تسلمها المديرية العامة للأمن الوطني الشرطة، والسجل العدلي تسلمه وزارة العدل المحكمة.",
+    "service_type": "good_conduct",
+    "expected_source": "good_conduct_certificate.json",
+    "category": "comparison"
+  },
+  {
+    "id": 27,
+    "query": "واش نقدر ناخد شهادة حسن السيرة أونلاين؟",
+    "expected_answer": "لا، شهادة حسن السيرة الخاصة بالشرطة تتطلب التوجه حضوريا للدائرة الأمنية الكوميسارية.",
+    "service_type": "good_conduct",
+    "expected_source": "good_conduct_certificate.json",
+    "category": "procedure"
+  },
+  {
+    "id": 28,
+    "query": "كم رسوم شهادة حسن السيرة؟",
+    "expected_answer": "طابع بريدي تنبر بقيمة 30 درهم.",
+    "service_type": "good_conduct",
+    "expected_source": "good_conduct_certificate.json",
+    "category": "fees"
+  },
+  {
+    "id": 29,
+    "query": "واش نقدر نطلب السجل العدلي من مدينة أخرى؟",
+    "expected_answer": "نعم عبر البوابة الإلكترونية casierjudiciaire.justice.gov.ma واختيار المحكمة الأقرب للاستلام.",
+    "service_type": "criminal_record",
+    "expected_source": "criminal_record_certificate.json",
+    "category": "procedure_online"
+  },
+  {
+    "id": 30,
+    "query": "شحال ديال الوقت باش يخرج السجل العدلي أونلاين؟",
+    "expected_answer": "أونلاين يأخذ عادة من 24 إلى 48 ساعة للوصول للمحكمة المختارة.",
+    "service_type": "criminal_record",
+    "expected_source": "criminal_record_certificate.json",
+    "category": "timeline"
+  },
+  {
+    "id": 31,
+    "query": "كم رسوم استخراج السجل العدلي؟",
+    "expected_answer": "10 دراهم رسوم التنبر.",
+    "service_type": "criminal_record",
+    "expected_source": "criminal_record_certificate.json",
+    "category": "fees"
+  },
+  {
+    "id": 32,
+    "query": "شنو هي شروط السفر للقمر في القانون المغربي؟",
+    "expected_answer": "ما متأكدش (سؤال خارج نطاق الخدمات الإدارية)",
+    "service_type": "out_of_scope",
+    "expected_source": "fallback",
+    "category": "edge_case_hallucination_check"
+  },
+  {
+    "id": 33,
+    "query": "كيفاش نشري تذكرة لماتش ريال مدريد؟",
+    "expected_answer": "ما متأكدش (سؤال خارج نطاق الخدمات الإدارية)",
+    "service_type": "out_of_scope",
+    "expected_source": "fallback",
+    "category": "edge_case_hallucination_check"
+  },
+  {
+    "id": 34,
+    "query": "شنو هي طريقة تحضير الكسكس المغربي؟",
+    "expected_answer": "ما متأكدش (سؤال خارج نطاق الخدمات الإدارية)",
+    "service_type": "out_of_scope",
+    "expected_source": "fallback",
+    "category": "edge_case_hallucination_check"
+  },
+  {
+    "id": 35,
+    "query": "واش المطلق يحتاج شهادة عزوبة للزواج مرة ثانية؟",
+    "expected_answer": "المطلق يطلب منه الإدلاء بعقد أو شهادة الطلاق والشهادة الإدارية لإثبات عدم مراجعة الزوجة.",
+    "service_type": "single_status",
+    "expected_source": "single_status_certificate.json",
+    "category": "special_cases"
   }
 ]
