@@ -1,5 +1,5 @@
-import { ReactNode } from "react";
-import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
+import { ReactNode, useEffect } from "react";
+import { Switch, Route, Redirect, Router as WouterRouter, useLocation } from "wouter";
 import {
   MutationCache,
   QueryCache,
@@ -9,7 +9,8 @@ import {
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { I18nProvider } from "@/lib/i18n";
+import { I18nProvider, useI18n } from "@/lib/i18n";
+import { trackVisit } from "@/lib/history";
 import {
   getToken,
   getStoredUser,
@@ -77,6 +78,28 @@ function GuestOnly({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function AnalyticsTracker() {
+  const [location] = useLocation();
+  const { language } = useI18n();
+
+  useEffect(() => {
+    const labels: Record<string, string> = {
+      "/": "Accueil",
+      "/login": "Connexion",
+      "/signup": "Inscription",
+      "/services": "Services",
+      "/chat": "Assistant IA",
+      "/dashboard": "Tableau de bord",
+      "/profile": "Profil",
+      "/admin": "Administration",
+    };
+    const label = location.startsWith("/cases/") ? "Détail demande" : (labels[location] ?? location);
+    trackVisit(location, label, language);
+  }, [location, language]);
+
+  return null;
+}
+
 function Router() {
   return (
     <Switch>
@@ -88,7 +111,9 @@ function Router() {
         <GuestOnly><Signup /></GuestOnly>
       </Route>
       <Route path="/services" component={Services} />
-      <Route path="/chat" component={Chat} />
+      <Route path="/chat">
+        <Protected><Chat /></Protected>
+      </Route>
       <Route path="/dashboard">
         <Protected><Dashboard /></Protected>
       </Route>
@@ -112,6 +137,7 @@ function App() {
       <I18nProvider>
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <AnalyticsTracker />
             <Router />
           </WouterRouter>
           <Toaster />

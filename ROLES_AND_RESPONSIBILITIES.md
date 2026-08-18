@@ -6,7 +6,7 @@ This document outlines the detailed roles, responsibilities, and weekly tasks fo
 
 **Project Duration:** 5 weeks (Week 1 → Final Week)  
 **Team Size:** 2 members  
-**Division Strategy:** Parallel development with strategic collaboration points
+**Division Strategy:** Parallel development with strategic collaboration pointsa
 
 ---
 

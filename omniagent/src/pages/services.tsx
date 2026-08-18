@@ -16,10 +16,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { SERVICES_META } from "@/lib/services-data";
-import { trackVisit } from "@/lib/history";
 
 const formSchema = z.object({
   applicantName: z.string().min(2),
@@ -46,10 +45,6 @@ export default function Services() {
   const [search, setSearch] = useState("");
   const Arrow = isRtl ? ArrowLeft : ArrowRight;
   const [_, setLocation] = useLocation();
-
-  useEffect(() => {
-    trackVisit("/services", "Services", language);
-  }, []);
 
   const createCase = useCreateCase();
   const form = useForm<z.infer<typeof formSchema>>({

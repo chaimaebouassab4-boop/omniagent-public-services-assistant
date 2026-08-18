@@ -1,6 +1,16 @@
-/** Standalone-chat helpers that fall outside the generated API client. */
+/** Persistent standalone-chat API backed by SQLAlchemy and the RAG service. */
+import { apiUrl } from "@/lib/api-url";
 import { getToken, handleUnauthorized } from "@/lib/auth";
-import type { Message } from "@workspace/api-client-react";
+
+export interface ChatMessage {
+  id: string | number;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  confidence?: number;
+  sources?: string[];
+  fallbackReason?: string;
+}
 
 export interface ChatSession {
   id: string;
@@ -9,57 +19,66 @@ export interface ChatSession {
   messageCount: number;
   createdAt: string;
   updatedAt: string;
+  messages?: ChatMessage[];
 }
 
-async function chatRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function chatFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const response = await fetch(path, {
-    ...init,
+  const response = await fetch(apiUrl(path), {
+    ...options,
     headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init?.headers,
+      ...(options.headers ?? {}),
     },
   });
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     handleUnauthorized(response.status);
-    throw new Error(data?.detail ?? `Chat request failed (HTTP ${response.status})`);
+    const detail = data?.detail ?? `Échec de la requête chat (HTTP ${response.status})`;
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
   return data as T;
 }
 
 export function listChatSessions(): Promise<ChatSession[]> {
-  return chatRequest<ChatSession[]>("/api/chat/sessions");
+  return chatFetch<ChatSession[]>("/api/chat/sessions");
 }
 
-export function listSessionMessages(sessionId: string): Promise<Message[]> {
-  return chatRequest<Message[]>(`/api/chat/messages?sessionId=${encodeURIComponent(sessionId)}`);
+export function listSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+  return chatFetch<ChatMessage[]>(
+    `/api/chat/messages?sessionId=${encodeURIComponent(sessionId)}`,
+  );
 }
 
-export function sendSessionMessage(
+export async function sendSessionMessage(
   sessionId: string,
   content: string,
   language: "ar" | "fr" | "darija",
-): Promise<Message> {
-  return chatRequest<Message>("/api/chat/messages", {
+): Promise<{ userMessage: ChatMessage; assistantMessage: ChatMessage }> {
+  const userMessage: ChatMessage = {
+    id: `pending-${crypto.randomUUID()}`,
+    role: "user",
+    content,
+    createdAt: new Date().toISOString(),
+  };
+  const assistantMessage = await chatFetch<ChatMessage>("/api/chat/messages", {
     method: "POST",
-    body: JSON.stringify({ sessionId, content, language }),
+    body: JSON.stringify({ content, language, sessionId }),
   });
+  return { userMessage, assistantMessage };
 }
 
-/** Deletes the current user's standalone chat history; returns the deleted count. */
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  await chatFetch<{ deleted: number }>(
+    `/api/chat/sessions/${encodeURIComponent(sessionId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export async function clearChatHistory(): Promise<number> {
-  const token = getToken();
-  const response = await fetch("/api/chat/messages", {
+  const result = await chatFetch<{ deleted: number }>("/api/chat/messages", {
     method: "DELETE",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    handleUnauthorized(response.status);
-    const detail = data && typeof data.detail === "string" ? data.detail : null;
-    throw new Error(detail ?? `Clear failed (HTTP ${response.status})`);
-  }
-  return (data && typeof data.deleted === "number" ? data.deleted : 0);
+  return result.deleted;
 }

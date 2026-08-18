@@ -4,6 +4,7 @@
  */
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getToken } from "@/lib/auth";
+import { apiUrl } from "@/lib/api-url";
 
 // ─── Auth token getter ────────────────────────────────────────────────────────
 let _tokenGetter: () => string | null = () => getToken();
@@ -18,7 +19,7 @@ async function apiFetch<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = _tokenGetter();
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -106,7 +107,7 @@ export const getGetAdminStatsQueryKey = () => ["admin", "stats"];
 export function useListServices() {
   return useQuery<Service[]>({
     queryKey: ["services"],
-    queryFn: () => apiFetch("/api/omni/services"),
+    queryFn: () => apiFetch("/api/services"),
   });
 }
 
@@ -114,14 +115,14 @@ export function useListServices() {
 export function useCreateCase() {
   return useMutation<Case, Error, { data: { serviceId: number; applicantName: string; applicantEmail: string; applicantPhone?: string; notes?: string } }>({
     mutationFn: ({ data }) =>
-      apiFetch("/api/omni/cases", { method: "POST", body: JSON.stringify(data) }),
+      apiFetch("/api/cases", { method: "POST", body: JSON.stringify(data) }),
   });
 }
 
 export function useGetCase(caseId: number, options?: any) {
   return useQuery<Case>({
     queryKey: ["case", caseId],
-    queryFn: () => apiFetch(`/api/omni/cases/${caseId}`),
+    queryFn: () => apiFetch(`/api/cases/${caseId}`),
     enabled: !!caseId,
     ...options?.query,
   });
@@ -130,7 +131,7 @@ export function useGetCase(caseId: number, options?: any) {
 export function useGetCaseTimeline(caseId: number, options?: any) {
   return useQuery<TimelineEvent[]>({
     queryKey: ["case-timeline", caseId],
-    queryFn: () => apiFetch(`/api/omni/cases/${caseId}/timeline`),
+    queryFn: () => apiFetch(`/api/cases/${caseId}/timeline`),
     enabled: !!caseId,
     ...options?.query,
   });
@@ -140,7 +141,7 @@ export function useGetCaseTimeline(caseId: number, options?: any) {
 export function useListMessages(caseId: number, options?: any) {
   return useQuery<Message[]>({
     queryKey: getListMessagesQueryKey(caseId),
-    queryFn: () => apiFetch(`/api/omni/cases/${caseId}/messages`),
+    queryFn: () => apiFetch(`/api/cases/${caseId}/messages`),
     enabled: !!caseId,
     ...options?.query,
   });
@@ -149,7 +150,7 @@ export function useListMessages(caseId: number, options?: any) {
 export function useSendMessage() {
   return useMutation<Message, Error, { id: number; data: { content: string; language: string } }>({
     mutationFn: ({ id, data }) =>
-      apiFetch(`/api/omni/cases/${id}/messages`, {
+      apiFetch(`/api/cases/${id}/messages`, {
         method: "POST",
         body: JSON.stringify(data),
       }),
@@ -160,7 +161,7 @@ export function useSendMessage() {
 export function useListDocuments(caseId: number, options?: any) {
   return useQuery<Document[]>({
     queryKey: getListDocumentsQueryKey(caseId),
-    queryFn: () => apiFetch(`/api/omni/cases/${caseId}/documents`),
+    queryFn: () => apiFetch(`/api/cases/${caseId}/documents`),
     enabled: !!caseId,
     ...options?.query,
   });
@@ -170,7 +171,7 @@ export function useListDocuments(caseId: number, options?: any) {
 export function useGetDashboardSummary() {
   return useQuery<DashboardSummary>({
     queryKey: ["dashboard"],
-    queryFn: () => apiFetch("/api/omni/dashboard"),
+    queryFn: () => apiFetch("/api/dashboard/summary"),
   });
 }
 

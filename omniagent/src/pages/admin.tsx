@@ -7,24 +7,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatusBadge } from "./dashboard";
 import { Button } from "@/components/ui/button";
 import { Check, X, Users, Eye, Monitor, Smartphone, Tablet, MapPin, TrendingUp, Globe, Clock } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from "recharts";
-import { useEffect, useState } from "react";
-import { getVisitors, seedVisitors, type VisitorEntry } from "@/lib/history";
+import { useState } from "react";
+import { getVisitors } from "@/lib/history";
 
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', '#eab308', '#22c55e', '#ef4444'];
 
 function VisitorStats() {
   const { language, isRtl } = useI18n();
-  const [visitors, setVisitors] = useState<VisitorEntry[]>([]);
+  const { data: visitors = [] } = useQuery({
+    queryKey: ["admin", "visit-analytics"],
+    queryFn: getVisitors,
+    refetchInterval: 30_000,
+  });
   const [activeTab, setActiveTab] = useState<"overview" | "live" | "pages" | "geo">("overview");
-
-  useEffect(() => {
-    seedVisitors();
-    setVisitors(getVisitors());
-    const interval = setInterval(() => setVisitors(getVisitors()), 5000);
-    return () => clearInterval(interval);
-  }, []);
 
   const now = Date.now();
   const last24h = visitors.filter((v) => now - v.timestamp < 86400000);

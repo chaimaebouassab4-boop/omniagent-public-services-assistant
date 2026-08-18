@@ -121,3 +121,17 @@ class AuditLog(Base):
 
     case: Mapped[Case] = relationship(back_populates="audit_logs")
     actor: Mapped[User | None] = relationship(back_populates="audit_logs")
+
+
+class VisitEvent(Base):
+    """Privacy-minimal page visit used for first-party admin analytics."""
+
+    __tablename__ = "visit_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id: Mapped[str] = mapped_column(String, index=True)
+    page: Mapped[str] = mapped_column(String, index=True)
+    page_label: Mapped[str] = mapped_column(String)
+    language: Mapped[str] = mapped_column(String, default="fr")
+    device: Mapped[str] = mapped_column(String, default="Desktop")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

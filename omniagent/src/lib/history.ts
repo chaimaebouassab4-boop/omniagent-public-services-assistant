@@ -1,3 +1,6 @@
+import { apiUrl } from "@/lib/api-url";
+import { getToken, handleUnauthorized } from "@/lib/auth";
+
 export interface VisitEntry {
   id: string;
   page: string;
@@ -7,98 +10,58 @@ export interface VisitEntry {
   lang: string;
 }
 
-export interface VisitorEntry {
-  id: string;
+export interface VisitorEntry extends VisitEntry {
   sessionId: string;
-  page: string;
-  pageLabel: string;
-  timestamp: number;
-  device: string;
+  device: "Mobile" | "Desktop" | "Tablette";
   city: string;
-  lang: string;
 }
 
 const HISTORY_KEY = "omniagent_history";
-const VISITORS_KEY = "omniagent_visitors";
+const SESSION_KEY = "omniagent_session";
 
-function genId() {
-  return Math.random().toString(36).slice(2, 10);
+function genId(): string {
+  return crypto.randomUUID();
 }
 
-const CITIES = ["Casablanca", "Rabat", "Marrakech", "Fès", "Tanger", "Agadir", "Oujda", "Meknès", "Laâyoune", "Tétouan"];
-const DEVICES = ["Mobile", "Desktop", "Tablette"];
+function detectDevice(): VisitorEntry["device"] {
+  const agent = navigator.userAgent.toLowerCase();
+  if (/ipad|tablet/.test(agent)) return "Tablette";
+  if (/android|iphone|mobile/.test(agent)) return "Mobile";
+  return "Desktop";
+}
 
-export function trackVisit(page: string, pageLabel: string, lang: string) {
+export function trackVisit(page: string, pageLabel: string, lang: string): void {
   const history: VisitEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-  const entry: VisitEntry = {
-    id: genId(),
-    page,
-    pageLabel,
-    timestamp: Date.now(),
-    lang,
-  };
-  history.unshift(entry);
-  if (history.length > 100) history.pop();
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  history.unshift({ id: genId(), page, pageLabel, timestamp: Date.now(), lang });
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 100)));
 
-  const visitors: VisitorEntry[] = JSON.parse(localStorage.getItem(VISITORS_KEY) || "[]");
-  const sessionId = localStorage.getItem("omniagent_session") || genId();
-  localStorage.setItem("omniagent_session", sessionId);
-  const vEntry: VisitorEntry = {
-    id: genId(),
-    sessionId,
-    page,
-    pageLabel,
-    timestamp: Date.now(),
-    device: DEVICES[Math.floor(Math.random() * DEVICES.length)],
-    city: CITIES[Math.floor(Math.random() * CITIES.length)],
-    lang,
-  };
-  visitors.unshift(vEntry);
-  if (visitors.length > 200) visitors.pop();
-  localStorage.setItem(VISITORS_KEY, JSON.stringify(visitors));
+  const sessionId = localStorage.getItem(SESSION_KEY) || genId();
+  localStorage.setItem(SESSION_KEY, sessionId);
+  void fetch(apiUrl("/api/analytics/visits"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, page, pageLabel, language: lang, device: detectDevice() }),
+  }).catch(() => {
+    // Analytics must never interrupt normal navigation.
+  });
 }
 
 export function getHistory(): VisitEntry[] {
   return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
 }
 
-export function clearHistory() {
+export function clearHistory(): void {
   localStorage.removeItem(HISTORY_KEY);
 }
 
-export function getVisitors(): VisitorEntry[] {
-  return JSON.parse(localStorage.getItem(VISITORS_KEY) || "[]");
-}
-
-export function seedVisitors() {
-  const existing = getVisitors();
-  if (existing.length > 10) return;
-
-  const pages = [
-    { page: "/", label: "Accueil" },
-    { page: "/services", label: "Services" },
-    { page: "/chat", label: "Assistant IA" },
-    { page: "/login", label: "Connexion" },
-    { page: "/signup", label: "Inscription" },
-    { page: "/services/1", label: "CIN" },
-    { page: "/services/2", label: "Passeport" },
-  ];
-  const langs = ["fr", "ar", "darija"];
-  const now = Date.now();
-  const seed: VisitorEntry[] = Array.from({ length: 48 }, (_, i) => {
-    const p = pages[Math.floor(Math.random() * pages.length)];
-    return {
-      id: genId(),
-      sessionId: genId(),
-      page: p.page,
-      pageLabel: p.label,
-      timestamp: now - Math.floor(Math.random() * 7 * 24 * 3600 * 1000),
-      device: DEVICES[Math.floor(Math.random() * DEVICES.length)],
-      city: CITIES[Math.floor(Math.random() * CITIES.length)],
-      lang: langs[Math.floor(Math.random() * langs.length)],
-    };
+export async function getVisitors(): Promise<VisitorEntry[]> {
+  const token = getToken();
+  const response = await fetch(apiUrl("/api/admin/analytics/visits"), {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
-  seed.sort((a, b) => b.timestamp - a.timestamp);
-  localStorage.setItem(VISITORS_KEY, JSON.stringify(seed));
+  if (!response.ok) {
+    handleUnauthorized(response.status);
+    throw new Error(`Analytics request failed (HTTP ${response.status})`);
+  }
+  return response.json();
 }

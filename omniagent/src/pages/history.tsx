@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import { History, Trash2, Globe, Clock, ArrowRight, ArrowLeft } from "lucide-react";
 import { useState, useEffect } from "react";
-import { getHistory, clearHistory, trackVisit, type VisitEntry } from "@/lib/history";
+import { getHistory, clearHistory, type VisitEntry } from "@/lib/history";
 import { Link } from "wouter";
 
 const PAGE_LABELS: Record<string, { fr: string; ar: string; color: string }> = {
@@ -60,7 +60,6 @@ export default function HistoryPage() {
   const [confirmed, setConfirmed] = useState(false);
 
   useEffect(() => {
-    trackVisit("/history", "Historique", language);
     setEntries(getHistory());
   }, []);
 

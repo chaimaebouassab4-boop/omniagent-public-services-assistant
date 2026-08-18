@@ -12,14 +12,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_current_user
 from app.db.database import get_db
-from app.models import AuditLog, Case, ChatMessage, Document, Service, User
+from app.models import AuditLog, Case, ChatMessage, Document, Service, User, VisitEvent
 from app.services.knowledge_base import answer_with_metadata, normalize_service_id
 
 router = APIRouter(prefix="/api", tags=["omni"])
@@ -86,6 +86,14 @@ class SendMessageBody(BaseModel):
     content: str
     language: str = "darija"
     sessionId: str | None = None
+
+
+class VisitEventBody(BaseModel):
+    sessionId: str = Field(min_length=1, max_length=100)
+    page: str = Field(min_length=1, max_length=200)
+    pageLabel: str = Field(min_length=1, max_length=100)
+    language: str = Field(default="fr", max_length=20)
+    device: str = Field(default="Desktop", max_length=30)
 
 
 # --------------------------------------------------------------------------- #
@@ -430,10 +438,20 @@ async def send_case_message(
     case = get_case_or_404(db, case_id)
     language = body.language if body.language in MESSAGE_LANGUAGES else "darija"
 
+    conversation_history = _recent_chat_history(
+        db.query(ChatMessage)
+        .filter(ChatMessage.case_id == case.id)
+        .filter(ChatMessage.sender.in_(("user", "assistant")))
+    )
+
     user_msg = ChatMessage(case_id=case.id, sender="user", message=body.content, language=language)
     db.add(user_msg)
 
-    answer = answer_with_metadata(service_id=case.service_id, user_message=body.content)
+    answer = answer_with_metadata(
+        service_id=case.service_id,
+        user_message=body.content,
+        conversation_history=conversation_history,
+    )
     assistant_msg = ChatMessage(
         case_id=case.id, sender="assistant", message=answer.answer, language=language
     )
@@ -449,6 +467,15 @@ async def send_case_message(
 # --------------------------------------------------------------------------- #
 # Standalone chat (not tied to a case)
 # --------------------------------------------------------------------------- #
+def _recent_chat_history(query, max_exchanges: int = 5) -> list[dict[str, str]]:
+    """Return the last complete conversation window in chronological order."""
+    rows = query.order_by(ChatMessage.created_at.desc()).limit(max_exchanges * 2).all()
+    return [
+        {"role": row.sender, "content": row.message}
+        for row in reversed(rows)
+    ]
+
+
 def detect_service_id(message: str) -> str:
     """Best-effort service detection from keywords for standalone chat."""
     lowered = message.lower()
@@ -553,6 +580,23 @@ async def clear_chat_messages(
     return {"deleted": deleted}
 
 
+@router.delete("/chat/sessions/{session_id}")
+async def delete_chat_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    deleted = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.case_id.is_(None))
+        .filter(ChatMessage.user_id == current_user.id)
+        .filter(ChatMessage.session_id == session_id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"deleted": deleted}
+
+
 @router.post("/chat/messages", status_code=status.HTTP_201_CREATED)
 async def send_chat_message(
     body: SendMessageBody,
@@ -562,6 +606,14 @@ async def send_chat_message(
     language = body.language if body.language in MESSAGE_LANGUAGES else "darija"
     session_id = body.sessionId or uuid.uuid4().hex
 
+    conversation_history = _recent_chat_history(
+        db.query(ChatMessage)
+        .filter(ChatMessage.case_id.is_(None))
+        .filter(ChatMessage.user_id == current_user.id)
+        .filter(ChatMessage.session_id == session_id)
+        .filter(ChatMessage.sender.in_(("user", "assistant")))
+    )
+
     user_msg = ChatMessage(
         case_id=None, user_id=current_user.id, session_id=session_id,
         sender="user", message=body.content, language=language
@@ -569,7 +621,11 @@ async def send_chat_message(
     db.add(user_msg)
 
     service_id = detect_service_id(body.content)
-    answer = answer_with_metadata(service_id=service_id, user_message=body.content)
+    answer = answer_with_metadata(
+        service_id=service_id,
+        user_message=body.content,
+        conversation_history=conversation_history,
+    )
     assistant_msg = ChatMessage(
         case_id=None,
         user_id=current_user.id,
@@ -699,6 +755,50 @@ async def upload_chat_document(
 # --------------------------------------------------------------------------- #
 # Dashboard & Admin
 # --------------------------------------------------------------------------- #
+@router.post("/analytics/visits", status_code=status.HTTP_201_CREATED)
+async def record_visit(body: VisitEventBody, db: Session = Depends(get_db)) -> dict:
+    event = VisitEvent(
+        session_id=body.sessionId,
+        page=body.page,
+        page_label=body.pageLabel,
+        language=body.language if body.language in MESSAGE_LANGUAGES else "fr",
+        device=body.device if body.device in {"Mobile", "Desktop", "Tablette"} else "Desktop",
+    )
+    db.add(event)
+    db.commit()
+    return {"recorded": True}
+
+
+@router.get("/admin/analytics/visits")
+async def admin_visit_events(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    events = (
+        db.query(VisitEvent)
+        .filter(VisitEvent.created_at >= cutoff)
+        .order_by(VisitEvent.created_at.desc())
+        .limit(2000)
+        .all()
+    )
+    return [
+        {
+            "id": event.id,
+            "sessionId": event.session_id,
+            "page": event.page,
+            "pageLabel": event.page_label,
+            "timestamp": int(event.created_at.timestamp() * 1000),
+            "device": event.device,
+            "city": "Non renseignée",
+            "lang": event.language,
+        }
+        for event in events
+    ]
+
+
 def status_counts(db: Session, base_query) -> list[dict]:
     rows = base_query.with_entities(Case.status, func.count(Case.id)).group_by(Case.status).all()
     return [{"status": s, "count": c} for s, c in rows]
@@ -775,3 +875,24 @@ async def admin_list_cases(
         query = query.filter(Case.status == status_filter)
     cases = query.order_by(Case.created_at.desc()).all()
     return [serialize_case(c) for c in cases]
+
+
+@router.patch("/admin/cases/{case_id}")
+async def admin_update_case(
+    case_id: int,
+    body: UpdateCaseBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    case = get_case_or_404(db, case_id)
+    if body.status is not None and body.status != case.status:
+        case.status = body.status
+        log_action(db, case.id, "status_changed", current_user.id, {"status": body.status})
+    if body.notes is not None:
+        case.notes = body.notes
+    case.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(case)
+    return serialize_case(case)

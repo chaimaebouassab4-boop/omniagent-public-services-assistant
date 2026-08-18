@@ -1,46 +1,36 @@
 services:
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: omniagent
-      POSTGRES_PASSWORD: omniagent
-      POSTGRES_DB: omniagent
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U omniagent"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   backend:
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
     environment:
-      DATABASE_URL: postgresql+psycopg2://omniagent:omniagent@postgres:5432/omniagent
+      DATABASE_URL: sqlite:////data/omniagent.db
       JWT_SECRET_KEY: change-me-in-production
       ALLOWED_ORIGINS: '["http://localhost:3000"]'
       ADMIN_EMAIL: admin@demo.local
       ADMIN_PASSWORD: admin123
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
     ports:
       - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    volumes:
+      - sqlite_data:/data
 
   frontend:
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
       args:
-        VITE_API_BASE_URL: http://localhost:8000
+        VITE_API_BASE_URL: ""
     ports:
       - "3000:80"
     depends_on:
       - backend
 
 volumes:
-  pgdata:
+  sqlite_data:

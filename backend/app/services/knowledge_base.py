@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -197,7 +197,12 @@ def _structured_fallback(user_message: str, knowledge: dict[str, Any]) -> str | 
     return None
 
 
-def answer_with_metadata(service_id: str, user_message: str, use_rag: bool = True) -> KnowledgeAnswer:
+def answer_with_metadata(
+    service_id: str,
+    user_message: str,
+    use_rag: bool = True,
+    conversation_history: Sequence[dict[str, str]] | None = None,
+) -> KnowledgeAnswer:
     """Return the best KB answer with confidence score and source files."""
     canonical_service_id = normalize_service_id(service_id)
 
@@ -207,7 +212,11 @@ def answer_with_metadata(service_id: str, user_message: str, use_rag: bool = Tru
             from app.rag_service import get_rag_engine
             engine = get_rag_engine()
             if engine.initialized:
-                rag_res = engine.query(user_query=user_message, service_type=canonical_service_id)
+                rag_res = engine.query(
+                    user_query=user_message,
+                    service_type=canonical_service_id,
+                    conversation_history=conversation_history,
+                )
                 if rag_res.get("confidence", 0.0) >= LOW_CONFIDENCE_THRESHOLD and not rag_res.get("fallback_reason"):
                     return KnowledgeAnswer(
                         answer=rag_res.get("answer", ""),

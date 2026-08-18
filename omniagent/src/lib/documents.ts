@@ -6,6 +6,7 @@
  * the behaviour of the generated client's auth getter.
  */
 import { getToken, handleUnauthorized, type AuthUser } from "@/lib/auth";
+import { apiUrl } from "@/lib/api-url";
 import type { Document, Message } from "@workspace/api-client-react";
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // keep in sync with backend
@@ -29,7 +30,7 @@ export function validateFile(file: File, allowedTypes: string[] = ALLOWED_UPLOAD
 
 async function postMultipart<T>(path: string, formData: FormData): Promise<T> {
   const token = getToken();
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData,
@@ -46,7 +47,7 @@ async function postMultipart<T>(path: string, formData: FormData): Promise<T> {
 
 export async function fetchCinPreview(): Promise<Blob> {
   const token = getToken();
-  const response = await fetch("/api/users/me/documents/cin", {
+  const response = await fetch(apiUrl("/api/users/me/documents/cin"), {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (!response.ok) {

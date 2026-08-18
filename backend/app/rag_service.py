@@ -1,11 +1,16 @@
 """RAG Service Module (OmniAgent RAG)
 
-Wraps ChromaDB + LlamaIndex + BAAI/bge-m3 + Ollama into a clean, reusable service.
+Wraps ChromaDB + LlamaIndex + BAAI/bge-m3 + a configurable LLM into a reusable service.
 Provides query_rag(user_query, service_type) for FastAPI endpoints.
 """
 import os
+import re
 from pathlib import Path
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional, List, Dict, Sequence
+from dotenv import load_dotenv
+
+# Load environment variables from .env if present
+load_dotenv()
 
 # Resolve project paths
 THIS_FILE = Path(__file__).resolve()
@@ -27,22 +32,118 @@ QA_PROMPT_TMPL = (
     "الجواب: "
 )
 
+ConversationMessage = Dict[str, str]
+
+
+def _format_conversation_history(history: Optional[Sequence[ConversationMessage]]) -> str:
+    """Render a small, untrusted conversation window for the generation prompt."""
+    if not history:
+        return "(no previous conversation)"
+    labels = {"user": "User", "assistant": "Assistant"}
+    lines = []
+    for item in history[-10:]:
+        role = labels.get(item.get("role", ""), "Message")
+        content = item.get("content", "").strip()
+        if content:
+            lines.append(f"{role}: {content}")
+    return "\n".join(lines) or "(no previous conversation)"
+
+
+def _prompt_with_history(history: Optional[Sequence[ConversationMessage]]) -> str:
+    """Inject history into the prompt without changing the retrieval query."""
+    history_text = _format_conversation_history(history)
+    return (
+        "Previous conversation (context only; factual answers must still come from sources):\n"
+        f"{history_text}\n"
+        "---------------------\n"
+        + QA_PROMPT_TMPL
+    )
+
+
+def _is_rate_limit_error(error: BaseException) -> bool:
+    """Recognize HTTP 429 across provider SDK exception wrappers."""
+    current: Optional[BaseException] = error
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        status = getattr(current, "status_code", None) or getattr(current, "code", None)
+        text = str(current).lower()
+        if status == 429 or "429" in text or "resource_exhausted" in text or "rate limit" in text:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+# ─── Service auto-detection from user query ──────────────────────────────────
+# Maps keywords (Arabic/Darija/French) → canonical service_id
+_SERVICE_KEYWORDS: Dict[str, List[str]] = {
+    "criminal_record": [
+        "السجل العدلي", "سجل عدلي", "casier judiciaire", "criminal record",
+        "الكازي", "كازي جوديسيار",
+    ],
+    "birth_certificate": [
+        "عقد الازدياد", "رسم الولادة", "شهادة الميلاد", "acte de naissance",
+        "عقد ازدياد", "الازدياد",
+    ],
+    "residence_certificate": [
+        "شهادة السكنى", "السكنى", "certificat de résidence", "شهادة سكنى",
+    ],
+    "marriage_contract": [
+        "عقد الزواج", "عقد زواج", "الزواج", "acte de mariage", "زواج",
+    ],
+    "death_certificate": [
+        "شهادة الوفاة", "رسم الوفاة", "الوفاة", "acte de décès",
+    ],
+    "life_certificate": [
+        "شهادة الحياة", "الحياة", "certificat de vie",
+    ],
+    "single_status_certificate": [
+        "شهادة العزوبة", "العزوبة", "célibat",
+    ],
+    "non_property_certificate": [
+        "شهادة عدم الملكية", "عدم الملكية", "non propriété",
+    ],
+    "administrative_certificate": [
+        "الشهادة الإدارية", "شهادة إدارية", "certificat administratif",
+    ],
+    "good_conduct_certificate": [
+        "شهادة حسن السيرة", "حسن السيرة", "bonne conduite",
+    ],
+}
+
+
+def _detect_service_from_query(user_query: str) -> Optional[str]:
+    """Auto-detect the service type from keywords in the user's question."""
+    query_lower = user_query.lower()
+    for service_id, keywords in _SERVICE_KEYWORDS.items():
+        for kw in keywords:
+            if kw in user_query or kw.lower() in query_lower:
+                return service_id
+    return None
+
 
 class OmniAgentRAG:
-    """Reusable RAG Engine wrapping ChromaDB + LlamaIndex + BAAI/bge-m3 + Ollama."""
+    """Reusable RAG engine with one retrieval pipeline and a configurable LLM."""
 
     def __init__(
         self,
         chroma_dir: Optional[Path] = None,
         collection_name: str = "public_services_kb",
-        ollama_model: str = "llama3.1:8b"
+        ollama_model: Optional[str] = None,
+        gemini_model: Optional[str] = None,
     ):
         self.chroma_dir = chroma_dir or CHROMA_DIR
         self.collection_name = collection_name
-        self.ollama_model = ollama_model
         self.initialized = False
         self.index = None
         self.qa_prompt = None
+        self._model_overrides = {
+            key: value
+            for key, value in {
+                "ollama_model": ollama_model,
+                "gemini_model": gemini_model,
+            }.items()
+            if value is not None
+        }
         self._init_rag()
 
     def _init_rag(self) -> None:
@@ -53,17 +154,13 @@ class OmniAgentRAG:
             import chromadb
             from llama_index.core import VectorStoreIndex, Settings, PromptTemplate
             from llama_index.vector_stores.chroma import ChromaVectorStore
-            from llama_index.llms.ollama import Ollama
             from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+            from app.core.config import settings as app_settings
+            from app.llm_factory import create_llm
 
-            # Configure Ollama LLM
-            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-            Settings.llm = Ollama(
-                model=self.ollama_model,
-                request_timeout=180.0,
-                base_url=base_url,
-                temperature=0.1
-            )
+            # Only generation varies; retrieval and embeddings remain shared.
+            llm_settings = app_settings.model_copy(update=self._model_overrides)
+            Settings.llm = create_llm(llm_settings)
 
             # Embeddings using BAAI/bge-m3 (State-of-the-art for Arabic/Multilingual/Darija)
             Settings.embed_model = HuggingFaceEmbedding(
@@ -83,10 +180,16 @@ class OmniAgentRAG:
                 print(f"[WARN] ChromaDB directory not found at {self.chroma_dir}. RAG running in fallback mode.")
                 self.initialized = False
         except Exception as e:
-            print(f"[WARN] OmniAgentRAG initialization notice: {e}")
+            provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
+            print(f"[WARN] LLM provider '{provider}' unavailable during RAG initialization: {e}")
             self.initialized = False
 
-    def query(self, user_query: str, service_type: Optional[str] = None) -> Dict[str, Any]:
+    def query(
+        self,
+        user_query: str,
+        service_type: Optional[str] = None,
+        conversation_history: Optional[Sequence[ConversationMessage]] = None,
+    ) -> Dict[str, Any]:
         """Query RAG pipeline with optional service_type metadata filter.
 
         Args:
@@ -115,9 +218,11 @@ class OmniAgentRAG:
                     filters=[ExactMatchFilter(key="service_type", value=clean_service)]
                 )
 
+            from llama_index.core import PromptTemplate
+
             query_engine = self.index.as_query_engine(
                 similarity_top_k=3,
-                text_qa_template=self.qa_prompt,
+                text_qa_template=PromptTemplate(_prompt_with_history(conversation_history)),
                 filters=filters
             )
 
@@ -156,14 +261,24 @@ class OmniAgentRAG:
                 "language": "darija"
             }
         except Exception as e:
-            print(f"[ERROR] Error during RAG query execution: {e}")
+            provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
+            if _is_rate_limit_error(e):
+                print(f"[WARN] LLM provider '{provider}' rate limited (HTTP 429); using local KB fallback")
+                return self._fallback_query(
+                    user_query, service_type, reason=f"LLM provider '{provider}' rate limited (HTTP 429)"
+                )
+            print(f"[WARN] LLM provider '{provider}' unavailable during RAG query: {e}")
             return self._fallback_query(user_query, service_type, reason=str(e))
 
     def _fallback_query(self, user_query: str, service_type: Optional[str], reason: str) -> Dict[str, Any]:
         """Fallback to local structured Knowledge Base if RAG index is unavailable."""
         try:
             from app.services.knowledge_base import answer_with_metadata
-            kb_ans = answer_with_metadata(service_type or "residence_certificate", user_query)
+
+            # Auto-detect service type from the question if not provided
+            resolved_service = service_type or _detect_service_from_query(user_query) or "residence_certificate"
+
+            kb_ans = answer_with_metadata(resolved_service, user_query, use_rag=False)
             return {
                 "answer": kb_ans.answer,
                 "sources": kb_ans.sources,
@@ -193,7 +308,11 @@ def get_rag_engine() -> OmniAgentRAG:
     return _rag_instance
 
 
-def query_rag(user_query: str, service_type: Optional[str] = None) -> Dict[str, Any]:
+def query_rag(
+    user_query: str,
+    service_type: Optional[str] = None,
+    conversation_history: Optional[Sequence[ConversationMessage]] = None,
+) -> Dict[str, Any]:
     """Public functional interface for querying the RAG pipeline.
 
     Args:
@@ -204,4 +323,8 @@ def query_rag(user_query: str, service_type: Optional[str] = None) -> Dict[str, 
         Dict: {"answer": "...", "sources": [...], "confidence": 0.92, "language": "darija"}
     """
     engine = get_rag_engine()
-    return engine.query(user_query=user_query, service_type=service_type)
+    return engine.query(
+        user_query=user_query,
+        service_type=service_type,
+        conversation_history=conversation_history,
+    )

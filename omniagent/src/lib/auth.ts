@@ -5,6 +5,8 @@
  * login / signup / profile pages. The token is attached to every generated
  * API-client request via `setAuthTokenGetter` (wired in App.tsx).
  */
+import { apiUrl } from "@/lib/api-url";
+
 const TOKEN_KEY = "omni_token";
 const USER_KEY = "omni_user";
 const AUTH_ROUTES = new Set(["/login", "/signup"]);
@@ -101,7 +103,7 @@ async function apiRequest<T>(
   body?: unknown,
 ): Promise<T> {
   const token = getToken();
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     method,
     headers: {
       "Content-Type": "application/json",

@@ -4,12 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus, History } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus, History, BookOpen, ShieldCheck } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { uploadChatDocument, validateFile } from "@/lib/documents";
 import { listChatSessions, listSessionMessages, sendSessionMessage } from "@/lib/chat";
+import type { ChatMessage } from "@/lib/chat";
 
 const DOCUMENT_PREFIX = "[Document] ";
 
@@ -21,6 +22,8 @@ export default function Chat() {
   const [activeSessionId, setActiveSessionId] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  /** Optimistic messages shown while waiting for RAG response */
+  const [pendingUserMsg, setPendingUserMsg] = useState<ChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -36,6 +39,18 @@ export default function Chat() {
   const sendChatMessage = useMutation({
     mutationFn: (content: string) =>
       sendSessionMessage(activeSessionId, content, language as "ar" | "fr" | "darija"),
+    onMutate: (content: string) => {
+      // Optimistically show user message immediately
+      setPendingUserMsg({
+        id: `pending-${Date.now()}`,
+        role: "user",
+        content,
+        createdAt: new Date().toISOString(),
+      });
+    },
+    onSettled: () => {
+      setPendingUserMsg(null);
+    },
   });
 
   useEffect(() => {
@@ -44,16 +59,23 @@ export default function Chat() {
     }
   }, [sessions, sessionsLoaded, activeSessionId]);
 
-  const handleNewConversation = () => {
+  const handleNewConversation = useCallback(() => {
     setActiveSessionId(crypto.randomUUID());
     setMessageInput("");
-  };
+    setPendingUserMsg(null);
+  }, []);
+
+  // Combine persisted messages + optimistic pending user message
+  const displayMessages: ChatMessage[] = [
+    ...(messages ?? []),
+    ...(pendingUserMsg ? [pendingUserMsg] : []),
+  ];
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, sendChatMessage.isPending, isUploading]);
+  }, [displayMessages, sendChatMessage.isPending, isUploading]);
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -91,18 +113,29 @@ export default function Chat() {
 
   const handleSendMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!messageInput.trim()) return;
+    const trimmed = messageInput.trim();
+    if (!trimmed) return;
 
-    sendChatMessage.mutate(
-      messageInput,
-      {
-        onSuccess: () => {
-          setMessageInput("");
-          queryClient.invalidateQueries({ queryKey: ["chat-messages", activeSessionId] });
-          queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
-        }
-      }
-    );
+    // Clear input immediately for snappy UX
+    setMessageInput("");
+
+    sendChatMessage.mutate(trimmed, {
+      onSettled: () => {
+        // Always refresh caches — the user message was already saved to
+        // localStorage before the API call, so it should show regardless.
+        queryClient.invalidateQueries({ queryKey: ["chat-messages", activeSessionId] });
+        queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+      },
+      onError: (err) => {
+        toast({
+          variant: "destructive",
+          title: language === "fr" ? "Erreur" : "خطأ",
+          description: err instanceof Error ? err.message : String(err),
+        });
+        // Re-populate input so user can retry
+        setMessageInput(trimmed);
+      },
+    });
   };
 
   const prompts = language === "fr" 
@@ -171,13 +204,13 @@ export default function Chat() {
           <CardContent className="flex-1 flex flex-col p-0 overflow-hidden bg-muted/10">
             <ScrollArea className="flex-1 p-6" viewportRef={scrollRef}>
               <div className="space-y-6">
-                {!messages?.length && (
+                {!displayMessages.length && !sendChatMessage.isPending && (
                   <div className="text-center text-muted-foreground mt-20">
                     <Bot className="w-12 h-12 mx-auto mb-4 text-primary opacity-50" />
                     <p>{language === "fr" ? "Bonjour! Comment puis-je vous aider aujourd'hui?" : "مرحباً! كيفاش نقدر نعاونك اليوم؟"}</p>
                   </div>
                 )}
-                {messages?.map((msg) => (
+                {displayMessages.map((msg) => (
                   <div key={msg.id} className={`flex gap-4 max-w-[85%] ${msg.role === 'user' ? (isRtl ? 'mr-auto flex-row-reverse' : 'ml-auto flex-row-reverse') : (isRtl ? 'ml-auto' : 'mr-auto')}`}>
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm ${msg.role === 'user' ? 'bg-secondary text-white' : 'bg-primary text-white'}`}>
                       {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
@@ -190,6 +223,23 @@ export default function Chat() {
                         </span>
                       ) : (
                         msg.content
+                      )}
+                      {/* RAG metadata for assistant messages */}
+                      {msg.role === 'assistant' && (msg.confidence != null || (msg.sources && msg.sources.length > 0)) && (
+                        <div className="mt-3 pt-2 border-t border-border/40 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                          {msg.confidence != null && (
+                            <span className="inline-flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3" />
+                              {language === "fr" ? "Confiance" : "الثقة"}: {Math.round(msg.confidence * 100)}%
+                            </span>
+                          )}
+                          {msg.sources && msg.sources.length > 0 && (
+                            <span className="inline-flex items-center gap-1">
+                              <BookOpen className="w-3 h-3" />
+                              {msg.sources.join(", ")}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

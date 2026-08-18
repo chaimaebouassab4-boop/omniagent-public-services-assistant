@@ -5,5 +5,12 @@ pydantic-settings
 python-multipart
 sqlalchemy
 python-jose
-psycopg2-binary
 pypdf
+# ── RAG pipeline ──
+llama-index-core
+llama-index-llms-ollama
+llama-index-llms-openai
+llama-index-llms-google-genai
+llama-index-vector-stores-chroma
+llama-index-embeddings-huggingface
+chromadb
