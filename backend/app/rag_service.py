@@ -21,13 +21,18 @@ KNOWLEDGE_DIR = ROOT_DIR / "tests" / "knowledge_base"
 
 # QA Prompt template in Moroccan Darija
 QA_PROMPT_TMPL = (
-    "المعلومات المتوفرة (sources):\n"
+    "المعلومات المتوفرة من الدليل الإداري الرسمي:\n"
     "---------------------\n"
     "{context_str}\n"
     "---------------------\n"
-    "أنت مساعد افتراضي مغربي. بناءً على المعلومات الفوق فقط، جاوب بالدارجة المغربية على السؤال التالي.\n"
-    "مهم جداً: إذا كانت المعلومات لا تحتوي على الجواب أو كنت غير متأكد، قل حرفياً وبدون أي زيادة: \"ما متأكدش\" واطلب توضيح.\n"
-    "لا تستخدم معلومات من خارج النص المتوفر.\n"
+    "أنت 'المساعد الذكي' للإجراءات والخدمات الإدارية العمومية بالمغرب. "
+    "مهمتك مساعدة المواطن بتقديم معلومات واضحة، دقيقة، ومباشرة بالدارجة المغربية بالاعتماد على الوثائق والمعلومات المتوفرة أعلاه "
+    "(بما فيها تفاصيل الوثائق المطلوبة، الرسوم، الإجراءات، الخطوات، والشروط).\n\n"
+    "تعليمات مهمة للإجابة:\n"
+    "1. استخرج الجواب بدقة وبأسلوب مفهوم وواضح بالدارجة المغربية من المعلومات أعلاه.\n"
+    "2. إذا كان السؤال عن الوثائق المطلوبة، اذكر لائحة الوثائق المحددة في السياق.\n"
+    "3. إذا كان السؤال عن الرسوم أو المدة الزمنية أو الخطوات، قدم المعلومات المذكورة في النص.\n"
+    "4. فقط إذا كان السؤال خارجاً تماماً عن نطاق الإدارة والخدمات العمومية، قل: \"ما متأكدش من الجواب، حيت هاد الموضوع خارج نطاق الخدمات الإدارية المتوفرة.\"\n\n"
     "السؤال: {query_str}\n"
     "الجواب: "
 )
@@ -36,28 +41,31 @@ ConversationMessage = Dict[str, str]
 
 
 def _format_conversation_history(history: Optional[Sequence[ConversationMessage]]) -> str:
-    """Render a small, untrusted conversation window for the generation prompt."""
+    """Render a small conversation window for context."""
     if not history:
-        return "(no previous conversation)"
-    labels = {"user": "User", "assistant": "Assistant"}
+        return ""
+    labels = {"user": "المواطن", "assistant": "المساعد"}
     lines = []
-    for item in history[-10:]:
-        role = labels.get(item.get("role", ""), "Message")
+    # Take only the last 3 turns
+    for item in history[-3:]:
+        role = labels.get(item.get("role", ""), "المواطن")
         content = item.get("content", "").strip()
-        if content:
+        if content and "ما متأكدش" not in content:
             lines.append(f"{role}: {content}")
-    return "\n".join(lines) or "(no previous conversation)"
+    return "\n".join(lines)
 
 
 def _prompt_with_history(history: Optional[Sequence[ConversationMessage]]) -> str:
-    """Inject history into the prompt without changing the retrieval query."""
+    """Inject history into prompt cleanly if available."""
     history_text = _format_conversation_history(history)
-    return (
-        "Previous conversation (context only; factual answers must still come from sources):\n"
-        f"{history_text}\n"
-        "---------------------\n"
-        + QA_PROMPT_TMPL
-    )
+    if history_text:
+        return (
+            "سياق المحادثة السابقة:\n"
+            f"{history_text}\n"
+            "---------------------\n"
+            + QA_PROMPT_TMPL
+        )
+    return QA_PROMPT_TMPL
 
 
 def _is_rate_limit_error(error: BaseException) -> bool:
@@ -221,7 +229,7 @@ class OmniAgentRAG:
             from llama_index.core import PromptTemplate
 
             query_engine = self.index.as_query_engine(
-                similarity_top_k=3,
+                similarity_top_k=5,
                 text_qa_template=PromptTemplate(_prompt_with_history(conversation_history)),
                 filters=filters
             )

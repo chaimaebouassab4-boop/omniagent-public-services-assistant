@@ -476,25 +476,66 @@ def _recent_chat_history(query, max_exchanges: int = 5) -> list[dict[str, str]]:
     ]
 
 
-def detect_service_id(message: str) -> str:
-    """Best-effort service detection from keywords for standalone chat."""
+def detect_service_id(message: str) -> str | None:
+    """Best-effort service detection from keywords for standalone chat.
+
+    Returns the canonical service id string when a keyword matches, or
+    ``None`` when no keyword is found so the caller can fall back to a
+    global RAG search across *all* services instead of defaulting to a
+    single hardcoded service (which caused wrong answers for questions
+    like "هل يمكن تعدد الزوجات" or "كيفاش نجدد بطاقة التعريف").
+    """
     lowered = message.lower()
     keyword_map = {
-        "residence_certificate": ["سكن", "résidence", "residence", "سكنى"],
-        "birth_certificate": ["ازدياد", "ولادة", "naissance", "birth"],
-        "marriage_contract": ["زواج", "mariage", "marriage"],
-        "death_certificate": ["وفاة", "décès", "deces", "death"],
-        "life_certificate": ["حياة", "vie", "life"],
-        "single_status_certificate": ["عزوبة", "célibat", "celibat", "single"],
-        "non_property_certificate": ["ملكية", "propriété", "propriete", "property"],
-        "good_conduct_certificate": ["حسن السيرة", "conduite", "conduct"],
-        "criminal_record": ["سجل العدلي", "casier", "criminal"],
-        "administrative_certificate": ["إدارية", "administrative"],
+        # ----- civil status -----
+        "residence_certificate": [
+            "سكن", "سكنى", "شهادة السكنى", "résidence", "residence",
+        ],
+        "birth_certificate": [
+            "ازدياد", "عقد الازدياد", "رسم الولادة", "ولادة",
+            "naissance", "birth",
+        ],
+        "death_certificate": [
+            "وفاة", "رسم الوفاة", "شهادة الوفاة",
+            "décès", "deces", "death",
+        ],
+        "life_certificate": [
+            "شهادة الحياة", "حياة", "certificat de vie", "vie", "life",
+        ],
+        # ----- family -----
+        "marriage_contract": [
+            "زواج", "عقد الزواج", "تعدد الزوجات", "الزوجة", "الزوج",
+            "الخطوبة", "خطيب", "mariage", "marriage",
+        ],
+        "single_status_certificate": [
+            "عزوبة", "شهادة العزوبة", "عازب", "célibat", "celibat", "single",
+        ],
+        # ----- property / admin -----
+        "non_property_certificate": [
+            "ملكية", "عدم الملكية", "شهادة عدم الملكية",
+            "propriété", "propriete", "property",
+        ],
+        "administrative_certificate": [
+            "شهادة إدارية", "الشهادة الإدارية", "إدارية", "administrative",
+        ],
+        # ----- justice -----
+        "good_conduct_certificate": [
+            "حسن السيرة", "شهادة حسن السيرة", "bonne conduite", "conduite", "conduct",
+        ],
+        "criminal_record": [
+            "السجل العدلي", "سجل عدلي", "الكازي", "casier judiciaire", "casier", "criminal",
+        ],
+        # ----- identity / misc (no dedicated KB folder yet) -----
+        "residence_certificate": [
+            "بطاقة التعريف", "cnie", "cin", "carte nationale",
+            "رخصة القيادة", "جواز السفر",
+        ],
     }
     for service_id, keywords in keyword_map.items():
-        if any(keyword in message or keyword in lowered for keyword in keywords):
+        if any(kw in message or kw in lowered for kw in keywords):
             return service_id
-    return "residence_certificate"
+    # No keyword matched → return None so the caller does a global search
+    return None
 
 
 @router.get("/chat/messages")
@@ -620,18 +661,41 @@ async def send_chat_message(
     )
     db.add(user_msg)
 
-    service_id = detect_service_id(body.content)
-    answer = answer_with_metadata(
-        service_id=service_id,
-        user_message=body.content,
-        conversation_history=conversation_history,
-    )
+    # Detect service if keyword matches, else None (searches all services)
+    detected_service = detect_service_id(body.content)
+
+    try:
+        from app.rag_service import query_rag
+        rag_res = query_rag(
+            user_query=body.content,
+            service_type=detected_service,
+            conversation_history=conversation_history
+        )
+        answer_text = rag_res.get("answer", "").strip()
+        if not answer_text or rag_res.get("fallback_reason"):
+            # Fall back to structured KB only if RAG is offline
+            answer = answer_with_metadata(
+                service_id=detected_service or "residence_certificate",
+                user_message=body.content,
+                use_rag=False,
+                conversation_history=conversation_history,
+            )
+            answer_text = answer.answer
+    except Exception:
+        answer = answer_with_metadata(
+            service_id=detected_service or "residence_certificate",
+            user_message=body.content,
+            use_rag=False,
+            conversation_history=conversation_history,
+        )
+        answer_text = answer.answer
+
     assistant_msg = ChatMessage(
         case_id=None,
         user_id=current_user.id,
         session_id=session_id,
         sender="assistant",
-        message=answer.answer,
+        message=answer_text,
         language=language,
     )
     db.add(assistant_msg)

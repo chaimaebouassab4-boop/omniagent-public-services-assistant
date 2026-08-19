@@ -23,9 +23,9 @@ class Settings(BaseSettings):
     # The LLM is server configuration; clients never select it per request.
     llm_provider: str = Field(default="ollama", description="ollama, openai, or gemini")
 
-    ollama_model: str = Field(default="llama3.1:8b", description="Local Ollama model name")
+    ollama_model: str = Field(default="llama3.2:3b", description="Local Ollama model name")
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama API URL")
-    ollama_request_timeout: float = 180.0
+    ollama_request_timeout: float = 360.0
     ollama_context_window: int = 8192
 
     openai_api_key: str = Field(default="", description="OpenAI API key for RAG LLM")

@@ -176,20 +176,21 @@ def _structured_fallback(user_message: str, knowledge: dict[str, Any]) -> str | 
 
     fees = knowledge.get("fees")
     if isinstance(fees, str) and any(
-        term in lowered_message for term in ["رسوم", "ثمن", "prix", "fee", "fees", "cost"]
+        term in lowered_message for term in ["رسوم", "ثمن", "شحال كتكلف", "واجبات", "prix", "fee", "fees", "cost"]
     ):
         return fees
 
-    required = knowledge.get("required_documents")
-    if isinstance(required, dict):
-        for key in ("common_to_both", "common_to_all"):
-            docs = required.get(key, [])
-            if docs:
-                docs_preview = "\n".join(f"- {doc}" for doc in docs[:4])
-                return f"Hadi awel watha2iq lli khassek ghaliban:\n{docs_preview}"
-    if isinstance(required, list) and required:
-        docs_preview = "\n".join(f"- {doc}" for doc in required[:4])
-        return f"Hadi awel watha2iq lli khassek ghaliban:\n{docs_preview}"
+    if any(term in lowered_message for term in ["وثائق", "الوثائق", "مدارك", "watha2iq", "documents", "وراق", "اوراق", "ورقة"]):
+        required = knowledge.get("required_documents")
+        if isinstance(required, dict):
+            for key in ("common_to_both", "common_to_all", "in_person", "for_marriage"):
+                docs = required.get(key, [])
+                if docs:
+                    docs_preview = "\n".join(f"- {doc}" for doc in docs[:4])
+                    return f"Hadi awel watha2iq lli khassek ghaliban:\n{docs_preview}"
+        if isinstance(required, list) and required:
+            docs_preview = "\n".join(f"- {doc}" for doc in required[:4])
+            return f"Hadi awel watha2iq lli khassek ghaliban:\n{docs_preview}"
 
     description = knowledge.get("description_ar") or knowledge.get("description") or ""
     if description:
@@ -224,7 +225,7 @@ def answer_with_metadata(
                         sources=rag_res.get("sources", []),
                         matched_question=None
                     )
-        except Exception as e:
+        except Exception:
             pass
 
     sources = _source_label(canonical_service_id)
@@ -247,10 +248,10 @@ def answer_with_metadata(
             best_coefficient = coefficient
             best_entry = entry
 
-    if best_entry and best_overlap > 0:
+    if best_entry and best_overlap >= 2:
         answer = str(best_entry.get("answer", "")).strip()
         confidence = round(min(0.95, 0.30 + 0.65 * best_coefficient), 2)
-        if answer and confidence >= LOW_CONFIDENCE_THRESHOLD and best_overlap >= 2:
+        if answer and confidence >= LOW_CONFIDENCE_THRESHOLD:
             return KnowledgeAnswer(
                 answer=answer,
                 confidence=confidence,
@@ -268,8 +269,8 @@ def answer_with_metadata(
         return KnowledgeAnswer(answer=structured, confidence=0.50, sources=sources)
 
     return KnowledgeAnswer(
-        answer="Twasalna b su2alek. Ghadi n3tiwk jawab mofdhal mlli tkoun ma3loumat akthar.",
-        confidence=0.20,
+        answer="ما متأكدش من الجواب على هاد السؤال. عفاك وضح ليا كثر ولا سول على الوثائق، الإجراءات، أو الرسوم.",
+        confidence=0.10,
         sources=sources
     )
 
