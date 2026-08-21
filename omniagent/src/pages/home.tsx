@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import {
   ArrowRight, ArrowLeft, Bot, Clock, ShieldCheck, Star,
   CreditCard, BookOpen, FileText, Home as HomeIcon, Heart, Activity,
-  CheckCircle, ChevronRight, MapPin, Globe
+  CheckCircle, ChevronRight, MapPin, Globe, Scale, Shield, Users
 } from "lucide-react";
 
 const fadeUp = {
@@ -16,12 +16,12 @@ const fadeUp = {
 };
 
 const SERVICES_PREVIEW = [
-  { icon: CreditCard, nameAr: "بطاقة التعريف الوطنية", nameFr: "Carte d'Identité Nationale", nameDarija: "البطاقة الوطنية", days: 14, color: "bg-primary/10 text-primary" },
-  { icon: BookOpen, nameAr: "جواز السفر", nameFr: "Passeport Biométrique", nameDarija: "جواز السفر", days: 30, color: "bg-secondary/10 text-secondary" },
-  { icon: FileText, nameAr: "شهادة الميلاد", nameFr: "Acte de Naissance", nameDarija: "شهادة الميلاد", days: 5, color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
-  { icon: HomeIcon, nameAr: "شهادة الإقامة", nameFr: "Attestation de Résidence", nameDarija: "شهادة السكنى", days: 3, color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
-  { icon: Heart, nameAr: "عقد الزواج", nameFr: "Acte de Mariage", nameDarija: "عقد الزواج", days: 7, color: "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400" },
+  { icon: HomeIcon, nameAr: "شهادة السكنى", nameFr: "Certificat de Résidence", nameDarija: "شهادة السكنى", days: 3, color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
+  { icon: FileText, nameAr: "عقد الازدياد", nameFr: "Acte de Naissance", nameDarija: "عقد الازدياد", days: 2, color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
+  { icon: Heart, nameAr: "عقد الزواج", nameFr: "Acte de Mariage", nameDarija: "عقد الزواج", days: 5, color: "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400" },
   { icon: Activity, nameAr: "شهادة الحياة", nameFr: "Certificat de Vie", nameDarija: "شهادة الحياة", days: 1, color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
+  { icon: ShieldCheck, nameAr: "شهادة حسن السيرة", nameFr: "Fiche anthropométrique", nameDarija: "شهادة حسن السيرة", days: 5, color: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400" },
+  { icon: Scale, nameAr: "السجل العدلي", nameFr: "Extrait du Casier Judiciaire", nameDarija: "السجل العدلي", days: 7, color: "bg-primary/10 text-primary" },
 ];
 
 const TESTIMONIALS = [
