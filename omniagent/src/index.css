@@ -204,4 +204,14 @@
   body {
     @apply font-sans antialiased bg-background text-foreground transition-colors duration-300;
   }
+  button,
+  [role="button"],
+  a,
+  select,
+  [type="checkbox"],
+  [type="radio"],
+  label[for],
+  summary {
+    cursor: pointer;
+  }
 }

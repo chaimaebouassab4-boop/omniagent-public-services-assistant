@@ -16,6 +16,8 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String, default="")
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    notify_email: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_sms: Mapped[bool] = mapped_column(Boolean, default=False)
     cin_file_path: Mapped[str | None] = mapped_column(String, nullable=True)
     # List of {id, name, size, mimeType, uploadedAt} entries; paths stay server-side.
     personal_documents: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)

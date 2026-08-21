@@ -5,17 +5,37 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, ArrowRight, ArrowLeft, Bot } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, ArrowLeft, Bot, KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { login } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
+import { apiUrl } from "@/lib/api-url";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function Login() {
   const { language, isRtl } = useI18n();
   const [_, setLocation] = useLocation();
+  const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+
+  // Forgot password state
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetStep, setResetStep] = useState<"email" | "code" | "done">("email");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetCodeFromServer, setResetCodeFromServer] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState("");
 
   const Arrow = isRtl ? ArrowLeft : ArrowRight;
   const requestedPath = new URLSearchParams(window.location.search).get("returnTo");
@@ -38,6 +58,71 @@ export default function Login() {
     }
   };
 
+  const handleForgotPassword = () => {
+    setResetEmail(email); // Pre-fill from login form
+    setResetStep("email");
+    setResetCode("");
+    setNewPassword("");
+    setResetError("");
+    setResetCodeFromServer(null);
+    setResetOpen(true);
+  };
+
+  const handleRequestCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetLoading(true);
+    setResetError("");
+    try {
+      const res = await fetch(apiUrl("/api/auth/forgot-password"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: resetEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Erreur");
+      // MVP: server returns the code directly
+      if (data.code) {
+        setResetCodeFromServer(data.code);
+        setResetCode(data.code);
+      }
+      setResetStep("code");
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetLoading(true);
+    setResetError("");
+    try {
+      const res = await fetch(apiUrl("/api/auth/reset-password"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: resetEmail,
+          code: resetCode,
+          newPassword: newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Erreur");
+      setResetStep("done");
+      toast({
+        title: language === "fr" ? "Mot de passe modifié ✓" : "تم تغيير كلمة المرور ✓",
+        description: language === "fr"
+          ? "Vous pouvez maintenant vous connecter."
+          : "دابا تقدر دخل بكلمة السر الجديدة.",
+      });
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   const t = {
     title: { fr: "Bon retour", ar: "مرحباً بعودتك", darija: "مرحبا بيك" },
     subtitle: {
@@ -51,10 +136,11 @@ export default function Login() {
     submit: { fr: "Se connecter", ar: "تسجيل الدخول", darija: "دخل" },
     noAccount: { fr: "Pas encore de compte ?", ar: "ليس لديك حساب؟", darija: "ما عندكش حساب؟" },
     signup: { fr: "S'inscrire", ar: "إنشاء حساب", darija: "سجل دابا" },
-    or: { fr: "ou continuer avec", ar: "أو المتابعة عبر", darija: "أو كمل بـ" },
   };
 
   const getText = (key: keyof typeof t) => t[key][language] ?? t[key]["fr"];
+
+  const isFr = language === "fr";
 
   return (
     <div className={`min-h-screen grid lg:grid-cols-2 ${isRtl ? "direction-rtl" : ""}`}>
@@ -132,7 +218,7 @@ export default function Login() {
             <div className="space-y-1.5">
               <div className={`flex items-center justify-between ${isRtl ? "flex-row-reverse" : ""}`}>
                 <Label htmlFor="password" className="text-sm font-medium">{getText("password")}</Label>
-                <button type="button" className="text-xs text-primary hover:underline">
+                <button type="button" onClick={handleForgotPassword} className="text-xs text-primary hover:underline">
                   {getText("forgot")}
                 </button>
               </div>
@@ -177,28 +263,6 @@ export default function Login() {
             </Button>
           </form>
 
-          {/* Divider */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs text-muted-foreground">
-              <span className="px-3 bg-background">{getText("or")}</span>
-            </div>
-          </div>
-
-          {/* Social login placeholders */}
-          <div className="grid grid-cols-2 gap-3">
-            <Button variant="outline" className="h-11 gap-2 font-normal" type="button">
-              <img src="https://www.google.com/favicon.ico" alt="Google" className="w-4 h-4" />
-              Google
-            </Button>
-            <Button variant="outline" className="h-11 gap-2 font-normal" type="button">
-              <span className="text-blue-600 font-bold text-sm">f</span>
-              Facebook
-            </Button>
-          </div>
-
           {/* Sign up link */}
           <p className={`mt-8 text-sm text-muted-foreground text-center`}>
             {getText("noAccount")}{" "}
@@ -208,6 +272,147 @@ export default function Login() {
           </p>
         </motion.div>
       </div>
+
+      {/* ── Password Reset Dialog ── */}
+      <Dialog open={resetOpen} onOpenChange={(open) => { if (!open) setResetOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5 text-primary" />
+              {isFr ? "Réinitialiser le mot de passe" : "إعادة تعيين كلمة المرور"}
+            </DialogTitle>
+            <DialogDescription>
+              {resetStep === "email" && (isFr
+                ? "Entrez votre adresse email pour recevoir un code de réinitialisation."
+                : "دخل الإيميل ديالك باش تاخد كود ديال إعادة تعيين كلمة المرور.")}
+              {resetStep === "code" && (isFr
+                ? "Entrez le code reçu et votre nouveau mot de passe."
+                : "دخل الكود لي وصلك وكلمة المرور الجديدة.")}
+              {resetStep === "done" && (isFr
+                ? "Votre mot de passe a été modifié avec succès."
+                : "تم تغيير كلمة المرور بنجاح.")}
+            </DialogDescription>
+          </DialogHeader>
+
+          {resetError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600" dir="ltr">
+              {resetError}
+            </div>
+          )}
+
+          {/* Step 1: Enter email */}
+          {resetStep === "email" && (
+            <form onSubmit={handleRequestCode} className="space-y-4 mt-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="reset-email" className="text-sm font-medium">
+                  {isFr ? "Adresse e-mail" : "البريد الإلكتروني"}
+                </Label>
+                <div className="relative">
+                  <Mail className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground ${isRtl ? "right-3" : "left-3"}`} />
+                  <Input
+                    id="reset-email"
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="ahmed@example.ma"
+                    className={`h-11 ${isRtl ? "pr-10" : "pl-10"}`}
+                    required
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+              <Button type="submit" className="w-full h-11" disabled={resetLoading}>
+                {resetLoading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    {isFr ? "Envoi..." : "جاري الإرسال..."}
+                  </span>
+                ) : (
+                  isFr ? "Envoyer le code" : "إرسال الكود"
+                )}
+              </Button>
+            </form>
+          )}
+
+          {/* Step 2: Enter code + new password */}
+          {resetStep === "code" && (
+            <form onSubmit={handleResetPassword} className="space-y-4 mt-2">
+              {/* MVP: show the code directly */}
+              {resetCodeFromServer && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                  <p className="font-medium mb-1">{isFr ? "🔑 Code de réinitialisation (MVP)" : "🔑 كود إعادة التعيين (MVP)"}</p>
+                  <p className="text-2xl font-mono font-bold tracking-widest text-center my-2">{resetCodeFromServer}</p>
+                  <p className="text-xs text-amber-600">
+                    {isFr
+                      ? "En production, ce code serait envoyé par email."
+                      : "فالإنتاج، هاد الكود غادي يتبعث عبر الإيميل."}
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="reset-code" className="text-sm font-medium">
+                  {isFr ? "Code à 6 chiffres" : "الكود (6 أرقام)"}
+                </Label>
+                <Input
+                  id="reset-code"
+                  value={resetCode}
+                  onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  className="h-11 text-center text-lg font-mono tracking-widest"
+                  maxLength={6}
+                  required
+                  dir="ltr"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="new-password" className="text-sm font-medium">
+                  {isFr ? "Nouveau mot de passe" : "كلمة المرور الجديدة"}
+                </Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="h-11"
+                  minLength={6}
+                  required
+                />
+              </div>
+
+              <Button type="submit" className="w-full h-11" disabled={resetLoading || resetCode.length < 6}>
+                {resetLoading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    {isFr ? "Modification..." : "جاري التغيير..."}
+                  </span>
+                ) : (
+                  isFr ? "Changer le mot de passe" : "غير كلمة المرور"
+                )}
+              </Button>
+            </form>
+          )}
+
+          {/* Step 3: Success */}
+          {resetStep === "done" && (
+            <div className="flex flex-col items-center gap-4 py-4">
+              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                <ShieldCheck className="w-8 h-8 text-green-600" />
+              </div>
+              <p className="text-sm text-muted-foreground text-center">
+                {isFr
+                  ? "Vous pouvez maintenant vous connecter avec votre nouveau mot de passe."
+                  : "دابا تقدر دخل بكلمة المرور الجديدة ديالك."}
+              </p>
+              <Button onClick={() => setResetOpen(false)} className="w-full h-11">
+                {isFr ? "Retour à la connexion" : "رجع للدخول"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

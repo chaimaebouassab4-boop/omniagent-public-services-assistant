@@ -66,7 +66,6 @@ export default function Signup() {
       ar: "بالتسجيل، أنت توافق على شروط الاستخدام وسياسة الخصوصية.",
       darija: "بالتسجيل كتقبل الشروط وسياسة الخصوصية.",
     },
-    or: { fr: "ou continuer avec", ar: "أو المتابعة عبر", darija: "أو كمل بـ" },
   };
 
   const getText = (key: keyof typeof t) => t[key][language] ?? t[key]["fr"];
@@ -259,27 +258,8 @@ export default function Signup() {
             </Button>
           </form>
 
-          {/* Divider */}
-          <div className="relative my-5">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs text-muted-foreground">
-              <span className="px-3 bg-background">{getText("or")}</span>
-            </div>
-          </div>
 
-          {/* Social */}
-          <div className="grid grid-cols-2 gap-3">
-            <Button variant="outline" className="h-11 gap-2 font-normal" type="button">
-              <img src="https://www.google.com/favicon.ico" alt="Google" className="w-4 h-4" />
-              Google
-            </Button>
-            <Button variant="outline" className="h-11 gap-2 font-normal" type="button">
-              <span className="text-blue-600 font-bold text-sm">f</span>
-              Facebook
-            </Button>
-          </div>
+
 
           <p className="mt-5 text-xs text-muted-foreground text-center leading-relaxed">
             {getText("terms")}

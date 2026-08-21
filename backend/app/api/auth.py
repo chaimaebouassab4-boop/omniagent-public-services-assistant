@@ -1,6 +1,7 @@
 import re
+import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -43,6 +44,8 @@ class SignupRequest(BaseModel):
 class UpdateProfileRequest(BaseModel):
     fullName: str | None = None
     phone: str | None = None
+    notifyEmail: bool | None = None
+    notifySms: bool | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -55,6 +58,8 @@ def serialize_user(user: User) -> dict:
         "fullName": user.full_name or "",
         "phone": user.phone,
         "isAdmin": user.is_admin,
+        "notifyEmail": user.notify_email,
+        "notifySms": user.notify_sms,
         "cinFileName": Path(user.cin_file_path).name.split("_", 1)[-1] if user.cin_file_path else None,
         # Strip the server-side "path" key before exposing document metadata.
         "personalDocuments": [
@@ -128,9 +133,96 @@ async def update_me(
         current_user.full_name = request.fullName
     if request.phone is not None:
         current_user.phone = request.phone
+    if request.notifyEmail is not None:
+        current_user.notify_email = request.notifyEmail
+    if request.notifySms is not None:
+        current_user.notify_sms = request.notifySms
     db.commit()
     db.refresh(current_user)
     return serialize_user(current_user)
+
+
+# --------------------------------------------------------------------------- #
+# Password reset
+# --------------------------------------------------------------------------- #
+# In-memory store: email -> {code, expires_at}
+# In production, use Redis or a DB table and send the code by email.
+_reset_tokens: dict[str, dict] = {}
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(..., min_length=3)
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str = Field(..., min_length=3)
+    code: str = Field(..., min_length=6, max_length=6)
+    newPassword: str = Field(..., min_length=6)
+
+
+@router.post("/auth/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)) -> dict:
+    """Generate a 6-digit reset code for the given email.
+
+    MVP: the code is returned directly in the response.
+    Production: the code would be sent via email/SMS instead.
+    """
+    email = request.email.strip().lower()
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Aucun compte trouvé avec cet e-mail. Veuillez vérifier votre adresse ou créer un compte.",
+        )
+
+    code = f"{secrets.randbelow(900000) + 100000}"  # 6-digit code
+    _reset_tokens[email] = {
+        "code": code,
+        "expires_at": datetime.now(UTC) + timedelta(minutes=15),
+    }
+    print(f"[RESET] Code for {email}: {code}")
+
+    return {
+        "message": "Code de réinitialisation généré.",
+        # MVP demo: code returned directly
+        "code": code,
+    }
+
+
+@router.post("/auth/reset-password")
+async def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)) -> dict:
+    """Validate the reset code and set a new password."""
+    email = request.email.strip().lower()
+    stored = _reset_tokens.get(email)
+
+    if not stored:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Code invalide ou expiré",
+        )
+
+    if stored["code"] != request.code.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Code invalide ou expiré",
+        )
+
+    if datetime.now(UTC) > stored["expires_at"]:
+        _reset_tokens.pop(email, None)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Code expiré, veuillez en demander un nouveau",
+        )
+
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
+
+    user.password_hash = hash_password(request.newPassword)
+    db.commit()
+    _reset_tokens.pop(email, None)
+
+    return {"message": "Mot de passe modifié avec succès"}
 
 
 # --------------------------------------------------------------------------- #

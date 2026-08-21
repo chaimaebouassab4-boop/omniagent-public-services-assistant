@@ -25,6 +25,8 @@ export interface AuthUser {
   fullName: string;
   phone: string | null;
   isAdmin: boolean;
+  notifyEmail?: boolean;
+  notifySms?: boolean;
   cinFileName?: string | null;
   personalDocuments?: PersonalDocument[];
 }
@@ -151,6 +153,8 @@ export async function fetchMe(): Promise<AuthUser> {
 export async function updateMe(payload: {
   fullName?: string;
   phone?: string;
+  notifyEmail?: boolean;
+  notifySms?: boolean;
 }): Promise<AuthUser> {
   const user = await apiRequest<AuthUser>("/api/auth/me", "PATCH", payload);
   const token = getToken();

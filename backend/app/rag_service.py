@@ -210,6 +210,9 @@ class OmniAgentRAG:
         if not self.initialized or self.index is None:
             return self._fallback_query(user_query, service_type, reason="RAG Vector Index offline")
 
+        # Detect user language to respond in the same language
+        detected_lang = _detect_language(user_query)
+
         try:
             from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 
@@ -259,14 +262,16 @@ class OmniAgentRAG:
 
             # Calculate confidence score
             confidence = round(float(max_score), 2) if max_score > 0 else 0.85
-            if "ما متأكدش" in answer_text or "ما متأكدش" in answer_text.replace(" ", ""):
+            # Check uncertainty markers in all supported languages
+            uncertainty_markers = ["ما متأكدش", "لست متأكداً", "Je ne suis pas sûr"]
+            if any(marker in answer_text for marker in uncertainty_markers):
                 confidence = 0.30
 
             return {
                 "answer": answer_text,
                 "sources": sources if sources else [service_type or "knowledge_base"],
                 "confidence": confidence,
-                "language": "darija"
+                "language": detected_lang
             }
         except Exception as e:
             provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()

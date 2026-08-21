@@ -4,12 +4,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus, History, BookOpen, ShieldCheck } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus, History, BookOpen, ShieldCheck, Trash2 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { uploadChatDocument, validateFile } from "@/lib/documents";
-import { listChatSessions, listSessionMessages, sendSessionMessage } from "@/lib/chat";
+import { listChatSessions, listSessionMessages, sendSessionMessage, deleteChatSession } from "@/lib/chat";
 import type { ChatMessage } from "@/lib/chat";
 
 const DOCUMENT_PREFIX = "[Document] ";
@@ -22,6 +32,7 @@ export default function Chat() {
   const [activeSessionId, setActiveSessionId] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   /** Optimistic messages shown while waiting for RAG response */
   const [pendingUserMsg, setPendingUserMsg] = useState<ChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -51,6 +62,27 @@ export default function Chat() {
     onSettled: () => {
       setPendingUserMsg(null);
     },
+  });
+
+  const deleteSessionMutation = useMutation({
+    mutationFn: deleteChatSession,
+    onSuccess: (_, deletedSessionId) => {
+      queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+      if (activeSessionId === deletedSessionId) {
+        setActiveSessionId(""); // It will auto-select the first one if available via useEffect
+      }
+      toast({
+        title: language === "fr" ? "Session supprimée" : "تم حذف الجلسة",
+        description: language === "fr" ? "La conversation a été supprimée." : "تم حذف المحادثة بنجاح.",
+      });
+    },
+    onError: (err) => {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Erreur" : "خطأ",
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
   });
 
   useEffect(() => {
@@ -170,26 +202,44 @@ export default function Chat() {
             <CardContent className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
               <div className="space-y-2">
                 {sessions.map((session) => (
-                  <button
+                  <div
                     key={session.id}
-                    type="button"
-                    onClick={() => setActiveSessionId(session.id)}
-                    className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                    className={`flex items-start justify-between rounded-lg border p-3 transition-colors ${
                       activeSessionId === session.id
                         ? "border-primary bg-primary/10"
                         : "hover:bg-muted"
                     }`}
                   >
-                    <div className="truncate text-sm font-medium">{session.title}</div>
-                    <div className="mt-1 truncate text-xs text-muted-foreground">
-                      {session.preview}
-                    </div>
-                    <div className="mt-2 text-[11px] text-muted-foreground">
-                      {new Date(session.updatedAt).toLocaleDateString(
-                        language === "fr" ? "fr-FR" : "ar-MA",
-                      )}
-                    </div>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSessionId(session.id)}
+                      className={`flex-1 min-w-0 ${isRtl ? 'text-right' : 'text-left'}`}
+                    >
+                      <div className="truncate text-sm font-medium">{session.title}</div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground">
+                        {session.preview}
+                      </div>
+                      <div className="mt-2 text-[11px] text-muted-foreground">
+                        {new Date(session.updatedAt).toLocaleDateString(
+                          language === "fr" ? "fr-FR" : "ar-MA",
+                        )}
+                      </div>
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-destructive/80 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSessionToDelete(session.id);
+                      }}
+                      disabled={deleteSessionMutation.isPending}
+                      title={language === "fr" ? "Supprimer cette discussion" : "حذف هذه المحادثة"}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  </div>
                 ))}
                 {!sessions.length && (
                   <p className="py-6 text-center text-sm text-muted-foreground">
@@ -312,6 +362,54 @@ export default function Chat() {
           </Card>
         </div>
       </div>
+
+      <AlertDialog open={Boolean(sessionToDelete)} onOpenChange={(open) => !open && setSessionToDelete(null)}>
+        <AlertDialogContent className="max-w-md rounded-2xl p-6 border shadow-2xl bg-card">
+          <AlertDialogHeader className={`space-y-3 ${isRtl ? "text-right" : "text-left"}`}>
+            <div className={`flex items-center gap-3.5 ${isRtl ? "flex-row-reverse" : ""}`}>
+              <div className="w-12 h-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <AlertDialogTitle className="text-lg font-semibold text-foreground">
+                  {language === "fr" ? "Supprimer cette discussion ?" : "واش بصح بغيتي تمسح هاد المحادثة؟"}
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-sm text-muted-foreground mt-1">
+                  {language === "fr"
+                    ? "Cette action est irréversible. L'ensemble des messages de cette discussion sera définitivement effacé."
+                    : "هاد العملية نهائية وما يمكنش ترجع فيها. كاع الرسائل ديال هاد المحادثة غادي يتمسحو."}
+                </AlertDialogDescription>
+              </div>
+            </div>
+          </AlertDialogHeader>
+          <AlertDialogFooter className={`mt-6 gap-2 sm:gap-0 ${isRtl ? "sm:flex-row-reverse sm:space-x-reverse" : ""}`}>
+            <AlertDialogCancel
+              disabled={deleteSessionMutation.isPending}
+              className="rounded-xl border-border hover:bg-muted font-medium"
+            >
+              {language === "fr" ? "Annuler" : "إلغاء"}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium shadow-sm transition-all"
+              disabled={deleteSessionMutation.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (sessionToDelete) {
+                  const id = sessionToDelete;
+                  setSessionToDelete(null);
+                  deleteSessionMutation.mutate(id);
+                }
+              }}
+            >
+              {deleteSessionMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                language === "fr" ? "Supprimer" : "مسح"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

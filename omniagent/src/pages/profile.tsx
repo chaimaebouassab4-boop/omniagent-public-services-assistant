@@ -34,6 +34,8 @@ export default function Profile() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [notifyEmail, setNotifyEmail] = useState(true);
+  const [notifySms, setNotifySms] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -54,6 +56,8 @@ export default function Profile() {
         setFullName(user.fullName ?? "");
         setEmail(user.email ?? "");
         setPhone(user.phone ?? "");
+        setNotifyEmail(user.notifyEmail ?? true);
+        setNotifySms(user.notifySms ?? false);
         setCinFileName(user.cinFileName ?? null);
         setPersonalDocuments(user.personalDocuments ?? []);
       })
@@ -362,7 +366,24 @@ export default function Profile() {
                     {language === "fr" ? "Recevoir des mises à jour sur vos dossiers" : "تلقي تحديثات حول قضاياك"}
                   </span>
                 </Label>
-                <Switch id="notif-email" defaultChecked />
+                <Switch
+                  id="notif-email"
+                  checked={notifyEmail}
+                  onCheckedChange={async (checked) => {
+                    setNotifyEmail(checked);
+                    try {
+                      await updateMe({ notifyEmail: checked });
+                      toast({
+                        title: language === "fr" ? "Préférence enregistrée" : "تم حفظ التفضيل",
+                        description: checked
+                          ? (language === "fr" ? "Notifications email activées" : "إشعارات البريد مفعلة")
+                          : (language === "fr" ? "Notifications email désactivées" : "إشعارات البريد معطلة"),
+                      });
+                    } catch {
+                      setNotifyEmail(!checked);
+                    }
+                  }}
+                />
               </div>
               <div className="flex items-center justify-between">
                 <Label htmlFor="notif-sms" className="flex flex-col gap-1">
@@ -371,7 +392,24 @@ export default function Profile() {
                     {language === "fr" ? "Recevoir des alertes sur votre téléphone" : "تلقي تنبيهات على هاتفك"}
                   </span>
                 </Label>
-                <Switch id="notif-sms" />
+                <Switch
+                  id="notif-sms"
+                  checked={notifySms}
+                  onCheckedChange={async (checked) => {
+                    setNotifySms(checked);
+                    try {
+                      await updateMe({ notifySms: checked });
+                      toast({
+                        title: language === "fr" ? "Préférence enregistrée" : "تم حفظ التفضيل",
+                        description: checked
+                          ? (language === "fr" ? "Notifications SMS activées" : "إشعارات SMS مفعلة")
+                          : (language === "fr" ? "Notifications SMS désactivées" : "إشعارات SMS معطلة"),
+                      });
+                    } catch {
+                      setNotifySms(!checked);
+                    }
+                  }}
+                />
               </div>
             </CardContent>
           </Card>
