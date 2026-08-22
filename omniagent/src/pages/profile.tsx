@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { LogOut, IdCard, FileText, Upload, Loader2, CheckCircle2, Eye } from "lucide-react";
+import { LogOut, IdCard, FileText, Upload, Loader2, CheckCircle2, Eye, Download, Trash2 } from "lucide-react";
 import { fetchMe, updateMe, logout, isAuthenticated, type PersonalDocument } from "@/lib/auth";
-import { fetchCinPreview, uploadProfileCin, uploadPersonalDocument, validateFile, CIN_UPLOAD_TYPES } from "@/lib/documents";
+import { fetchCinPreview, fetchPersonalDocPreview, uploadProfileCin, uploadPersonalDocument, validateFile, CIN_UPLOAD_TYPES, deletePersonalDocument } from "@/lib/documents";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -47,6 +47,10 @@ export default function Profile() {
   const [cinPreviewUrl, setCinPreviewUrl] = useState<string | null>(null);
   const [cinPreviewType, setCinPreviewType] = useState("");
   const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [personalPreviewDoc, setPersonalPreviewDoc] = useState<{ name: string; url: string; mimeType: string } | null>(null);
+  const [viewingPersonalDocId, setViewingPersonalDocId] = useState<string | null>(null);
+  const [docToDelete, setDocToDelete] = useState<PersonalDocument | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const cinInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
 
@@ -146,11 +150,72 @@ export default function Profile() {
     }
   };
 
+  const handleViewPersonalDoc = async (doc: PersonalDocument) => {
+    setViewingPersonalDocId(doc.id);
+    try {
+      const blob = await fetchPersonalDocPreview(doc.id);
+      if (personalPreviewDoc?.url) URL.revokeObjectURL(personalPreviewDoc.url);
+      const url = URL.createObjectURL(blob);
+      setPersonalPreviewDoc({ name: doc.name, url, mimeType: blob.type || doc.mimeType || "application/pdf" });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Impossible d'afficher le document" : "تعذر عرض الوثيقة",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setViewingPersonalDocId(null);
+    }
+  };
+
+  const handleDownloadPersonalDoc = async (doc: PersonalDocument) => {
+    try {
+      const blob = await fetchPersonalDocPreview(doc.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = doc.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Échec du téléchargement" : "فشل التحميل",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
+  };
+
+  const confirmDeletePersonalDoc = async () => {
+    if (!docToDelete) return;
+    setIsDeleting(true);
+    try {
+      const updatedUser = await deletePersonalDocument(docToDelete.id);
+      setPersonalDocuments(updatedUser.personalDocuments ?? []);
+      toast({
+        title: language === "fr" ? "Document supprimé" : "تم حذف الوثيقة بنجاح",
+        description: docToDelete.name,
+      });
+      setDocToDelete(null);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Échec de suppression" : "فشل الحذف",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   useEffect(() => {
     return () => {
       if (cinPreviewUrl) URL.revokeObjectURL(cinPreviewUrl);
+      if (personalPreviewDoc?.url) URL.revokeObjectURL(personalPreviewDoc.url);
     };
-  }, [cinPreviewUrl]);
+  }, [cinPreviewUrl, personalPreviewDoc]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -309,17 +374,60 @@ export default function Profile() {
                 </div>
                 <div className="space-y-2">
                   {personalDocuments.map((doc) => (
-                    <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
-                      <FileText className="w-5 h-5 text-primary shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium truncate" title={doc.name}>{doc.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {formatSize(doc.size)} · {new Date(doc.uploadedAt).toLocaleDateString()}
+                    <div key={doc.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <FileText className="w-5 h-5 text-primary shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate" title={doc.name}>{doc.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {formatSize(doc.size)} · {new Date(doc.uploadedAt).toLocaleDateString()}
+                          </div>
                         </div>
                       </div>
-                      <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 shrink-0">
-                        {language === "fr" ? "Importé" : "مستورد"}
-                      </Badge>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 shrink-0">
+                          {language === "fr" ? "Importé" : "مستورد"}
+                        </Badge>
+
+                        {/* View Button */}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-primary hover:bg-primary/10"
+                          title={language === "fr" ? "Consulter" : "معاينة"}
+                          disabled={viewingPersonalDocId === doc.id}
+                          onClick={() => handleViewPersonalDoc(doc)}
+                        >
+                          {viewingPersonalDocId === doc.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
+                        </Button>
+
+                        {/* Download Button */}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          title={language === "fr" ? "Télécharger" : "تحميل"}
+                          onClick={() => handleDownloadPersonalDoc(doc)}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+
+                        {/* Delete Button */}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40"
+                          title={language === "fr" ? "Supprimer" : "حذف الوثيقة"}
+                          onClick={() => setDocToDelete(doc)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                   {!personalDocuments.length && (
@@ -424,7 +532,7 @@ export default function Profile() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl h-[85vh] flex flex-col">
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col" dir={isRtl ? "rtl" : "ltr"}>
           <DialogHeader>
             <DialogTitle>
               {language === "fr" ? "Carte d'Identité Nationale (CIN)" : "البطاقة الوطنية للتعريف"}
@@ -445,6 +553,118 @@ export default function Profile() {
                 className="w-full h-full object-contain"
               />
             ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Personal Document Viewer Modal */}
+      <Dialog
+        open={Boolean(personalPreviewDoc)}
+        onOpenChange={(open) => {
+          if (!open && personalPreviewDoc) {
+            URL.revokeObjectURL(personalPreviewDoc.url);
+            setPersonalPreviewDoc(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-4 sm:p-6" dir={isRtl ? "rtl" : "ltr"}>
+          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b">
+            <div className="text-start">
+              <DialogTitle className="text-base sm:text-lg font-bold truncate max-w-[500px]">
+                {personalPreviewDoc?.name}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                {language === "fr" ? "Aperçu du document personnel" : "معاينة الوثيقة الشخصية"}
+              </DialogDescription>
+            </div>
+            {personalPreviewDoc && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 shrink-0"
+                onClick={() => {
+                  const a = document.createElement("a");
+                  a.href = personalPreviewDoc.url;
+                  a.download = personalPreviewDoc.name;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                }}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{language === "fr" ? "Télécharger" : "تحميل"}</span>
+              </Button>
+            )}
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-auto rounded-xl border bg-muted/30 flex items-center justify-center p-2">
+            {personalPreviewDoc?.mimeType === "application/pdf" || personalPreviewDoc?.name.toLowerCase().endsWith(".pdf") ? (
+              <iframe
+                src={personalPreviewDoc.url}
+                title={personalPreviewDoc.name}
+                className="w-full h-full min-h-[60vh] rounded-lg"
+              />
+            ) : personalPreviewDoc ? (
+              <img
+                src={personalPreviewDoc.url}
+                alt={personalPreviewDoc.name}
+                className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Professional Delete Confirmation Modal */}
+      <Dialog
+        open={Boolean(docToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setDocToDelete(null);
+        }}
+      >
+        <DialogContent className="max-w-md p-6 sm:p-7 rounded-2xl shadow-2xl" dir={isRtl ? "rtl" : "ltr"}>
+          <div className="flex flex-col items-center text-center space-y-4 pt-2">
+            <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-950/60 flex items-center justify-center text-red-600 ring-8 ring-red-50 dark:ring-red-950/30">
+              <Trash2 className="w-7 h-7" />
+            </div>
+            <div className="space-y-2">
+              <DialogTitle className="text-xl font-bold">
+                {language === "fr" ? "Supprimer le document ?" : "تأكيد حذف الوثيقة"}
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground leading-relaxed px-2">
+                {language === "fr" ? (
+                  <>
+                    Êtes-vous sûr de vouloir supprimer définitivement <span className="font-semibold text-foreground font-mono text-xs px-1.5 py-0.5 rounded bg-muted">"{docToDelete?.name}"</span> ? Cette action ne peut pas être annulée.
+                  </>
+                ) : (
+                  <>
+                    هل أنت متأكد من رغبتك في حذف الوثيقة <span className="font-semibold text-foreground font-mono text-xs px-1.5 py-0.5 rounded bg-muted">"{docToDelete?.name}"</span> نهائياً؟ لن تتمكن من استرجاع هذا الملف.
+                  </>
+                )}
+              </DialogDescription>
+            </div>
+          </div>
+          <div className="flex items-center justify-center gap-3 pt-5 border-t mt-4">
+            <Button
+              variant="outline"
+              className="flex-1 h-10 font-medium"
+              disabled={isDeleting}
+              onClick={() => setDocToDelete(null)}
+            >
+              {language === "fr" ? "Annuler" : "تراجع"}
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 h-10 gap-2 bg-red-600 hover:bg-red-700 text-white font-medium"
+              disabled={isDeleting}
+              onClick={confirmDeletePersonalDoc}
+            >
+              {isDeleting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              <span>{language === "fr" ? "Supprimer" : "تأكيد الحذف"}</span>
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "./dashboard";
 import { Button } from "@/components/ui/button";
-import { Check, X, Users, Eye, Monitor, Smartphone, Tablet, MapPin, TrendingUp, Globe, Clock } from "lucide-react";
+import { Link } from "wouter";
+import { Check, X, Users, Eye, Monitor, Smartphone, Tablet, MapPin, TrendingUp, Globe, Clock, RotateCcw } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from "recharts";
 import { useState } from "react";
@@ -250,13 +251,14 @@ export default function Admin() {
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<"cases" | "visitors">("cases");
 
-  const handleAction = (id: number, status: "approved" | "rejected") => {
+  const handleAction = (id: number, status: "approved" | "rejected" | "in_review" | "submitted") => {
     updateCase.mutate(
       { id, data: { status } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getAdminListCasesQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetAdminStatsQueryKey() });
+          queryClient.invalidateQueries({ queryKey: ["admin", "notifications"] });
         }
       }
     );
@@ -331,33 +333,86 @@ export default function Admin() {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/50">
-                        <TableHead>Réf.</TableHead>
-                        <TableHead>{language === "fr" ? "Service" : "الخدمة"}</TableHead>
-                        <TableHead>{language === "fr" ? "Demandeur" : "مقدم الطلب"}</TableHead>
-                        <TableHead>{language === "fr" ? "Statut" : "الحالة"}</TableHead>
-                        <TableHead className={isRtl ? "text-left" : "text-right"}>{language === "fr" ? "Actions" : "إجراءات"}</TableHead>
+                        <TableHead className="w-[140px] text-start font-semibold">Réf.</TableHead>
+                        <TableHead className="text-start font-semibold">{language === "fr" ? "Service" : "الخدمة"}</TableHead>
+                        <TableHead className="text-start font-semibold">{language === "fr" ? "Demandeur" : "مقدم الطلب"}</TableHead>
+                        <TableHead className="w-[130px] text-center font-semibold">{language === "fr" ? "Statut" : "الحالة"}</TableHead>
+                        <TableHead className="w-[260px] text-end font-semibold">{language === "fr" ? "Actions" : "إجراءات"}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {cases?.map((c) => (
                         <TableRow key={c.id}>
-                          <TableCell className="font-mono text-xs font-medium">{c.referenceNumber}</TableCell>
-                          <TableCell className="text-sm">{language === "fr" ? c.service?.nameFr : c.service?.nameAr}</TableCell>
-                          <TableCell className="text-sm">{c.applicantName}</TableCell>
-                          <TableCell><StatusBadge status={c.status} /></TableCell>
-                          <TableCell className={isRtl ? "text-left" : "text-right"}>
-                            {(c.status === "in_review" || c.status === "submitted") ? (
-                              <div className={`flex items-center gap-2 ${isRtl ? "justify-start" : "justify-end"}`}>
-                                <Button size="icon" variant="outline" className="text-emerald-600 border-emerald-200 hover:bg-emerald-50 w-7 h-7" onClick={() => handleAction(c.id, "approved")}>
+                          <TableCell className="font-mono text-xs font-semibold text-start text-primary">
+                            {c.referenceNumber}
+                          </TableCell>
+                          <TableCell className="text-sm font-medium text-start">
+                            {language === "fr" ? c.service?.nameFr : c.service?.nameAr}
+                          </TableCell>
+                          <TableCell className="text-sm text-start text-muted-foreground">
+                            {c.applicantName}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex justify-center">
+                              <StatusBadge status={c.status} />
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-end">
+                            <div className="flex items-center gap-1.5 justify-end flex-wrap">
+                              {/* Approve button - available if not currently approved */}
+                              {c.status !== "approved" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2.5 text-xs font-medium text-emerald-600 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 gap-1 shadow-xs"
+                                  onClick={() => handleAction(c.id, "approved")}
+                                  title={language === "fr" ? "Accepter la demande" : "قبول الطلب"}
+                                >
                                   <Check className="w-3.5 h-3.5" />
+                                  <span>{language === "fr" ? "Accepter" : "قبول"}</span>
                                 </Button>
-                                <Button size="icon" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 w-7 h-7" onClick={() => handleAction(c.id, "rejected")}>
+                              )}
+
+                              {/* Reject button - available if not currently rejected */}
+                              {c.status !== "rejected" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2.5 text-xs font-medium text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700 gap-1 shadow-xs"
+                                  onClick={() => handleAction(c.id, "rejected")}
+                                  title={language === "fr" ? "Rejeter la demande" : "رفض الطلب"}
+                                >
                                   <X className="w-3.5 h-3.5" />
+                                  <span>{language === "fr" ? "Rejeter" : "رفض"}</span>
                                 </Button>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
+                              )}
+
+                              {/* Reopen/Review button - available if decision was already made (approved or rejected) */}
+                              {(c.status === "approved" || c.status === "rejected") && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs text-amber-600 hover:bg-amber-50 hover:text-amber-700 gap-1"
+                                  onClick={() => handleAction(c.id, "in_review")}
+                                  title={language === "fr" ? "Changer la décision / Remettre en révision" : "تغيير القرار / إعادة المراجعة"}
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>{language === "fr" ? "Réviser" : "مراجعة"}</span>
+                                </Button>
+                              )}
+
+                              {/* View full case details */}
+                              <Link href={`/cases/${c.id}`}>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  title={language === "fr" ? "Voir dossier complet" : "عرض الملف"}
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </Button>
+                              </Link>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}

@@ -216,47 +216,54 @@ export default function Services() {
           return (
             <motion.div
               key="detail"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className={`fixed inset-0 z-50 flex ${isRtl ? "justify-start" : "justify-end"} overflow-hidden`}
+              dir={isRtl ? "rtl" : "ltr"}
             >
-              <div className="absolute inset-0 bg-black/50" onClick={() => setDetailService(null)} />
+              <div
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={() => setDetailService(null)}
+              />
               <motion.div
-                initial={{ x: isRtl ? "-100%" : "100%" }}
-                animate={{ x: 0 }}
-                exit={{ x: isRtl ? "-100%" : "100%" }}
+                initial={{ opacity: 0, x: isRtl ? -80 : 80 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: isRtl ? -80 : 80 }}
                 transition={{ type: "spring", damping: 28, stiffness: 260 }}
-                className={`absolute top-0 bottom-0 ${isRtl ? "left-0" : "right-0"} w-full max-w-lg bg-background shadow-2xl overflow-y-auto`}
+                className="relative z-10 w-full sm:max-w-xl max-w-full h-full bg-background shadow-2xl overflow-y-auto flex flex-col border-x border-border"
               >
                 {/* Image header */}
-                <div className="relative h-52">
+                <div className="relative h-56 shrink-0">
                   <img src={m.image} alt={detailService.nameFr} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                   <button
                     onClick={() => setDetailService(null)}
-                    className={`absolute top-4 ${isRtl ? "left-4" : "right-4"} w-8 h-8 bg-black/40 rounded-full flex items-center justify-center text-white hover:bg-black/60`}
+                    aria-label="Close"
+                    className={`absolute top-4 ${isRtl ? "left-4" : "right-4"} w-9 h-9 bg-black/50 hover:bg-black/75 rounded-full flex items-center justify-center text-white transition-colors backdrop-blur-sm shadow-md`}
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-5 h-5" />
                   </button>
-                  <div className="absolute bottom-4 left-4 right-4">
-                    <div className="flex gap-2 mb-2">
-                      <Badge className="bg-primary text-white border-0">{m.fee}</Badge>
-                      <Badge className="bg-white/20 text-white border-white/30">
-                        <Clock className="w-3 h-3 mr-1" />{detailService.processingDays} {language === "fr" ? "jours" : "أيام"}
+                  <div className="absolute bottom-4 left-5 right-5">
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      <Badge className="bg-primary text-white border-0 font-medium">{m.fee}</Badge>
+                      <Badge className="bg-white/25 text-white border-white/40 backdrop-blur-sm font-medium">
+                        <Clock className="w-3.5 h-3.5 mr-1" />{detailService.processingDays} {language === "fr" ? "jours" : "أيام"}
                       </Badge>
                     </div>
-                    <h2 className="text-white font-bold text-xl">{getName(detailService)}</h2>
-                    <p className="text-white/70 text-xs">{language === "fr" ? detailService.nameAr : detailService.nameFr}</p>
+                    <h2 className="text-white font-bold text-2xl leading-tight drop-shadow-sm">{getName(detailService)}</h2>
+                    <p className="text-white/80 text-xs mt-0.5">{language === "fr" ? detailService.nameAr : detailService.nameFr}</p>
                   </div>
                 </div>
 
-                <div className={`p-6 space-y-6 ${isRtl ? "text-right" : ""}`}>
+                <div className="p-6 space-y-6 flex-1 overflow-y-auto">
                   {/* Description */}
                   <p className="text-muted-foreground text-sm leading-relaxed">
                     {language === "fr" ? m.descLongFr : m.descLongAr}
                   </p>
 
                   {/* Office */}
-                  <div className={`flex items-start gap-3 p-3 rounded-xl bg-muted/60 ${isRtl ? "flex-row-reverse" : ""}`}>
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-muted/60">
                     <ExternalLink className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                     <div>
                       <p className="text-xs font-semibold text-foreground mb-0.5">{language === "fr" ? "Organisme compétent" : "الجهة المختصة"}</p>
@@ -266,16 +273,16 @@ export default function Services() {
 
                   {/* Steps */}
                   <div>
-                    <h3 className="font-semibold text-foreground mb-3">
+                    <h3 className="font-semibold text-foreground mb-3 text-base">
                       {language === "fr" ? "Étapes à suivre" : "الخطوات المطلوبة"}
                     </h3>
                     <div className="space-y-3">
                       {steps.map((step, i) => (
-                        <div key={i} className={`flex items-start gap-3 ${isRtl ? "flex-row-reverse" : ""}`}>
+                        <div key={i} className="flex items-start gap-3">
                           <div className="w-6 h-6 rounded-full bg-primary text-white text-xs flex items-center justify-center shrink-0 font-bold mt-0.5">
                             {i + 1}
                           </div>
-                          <p className="text-sm text-foreground leading-relaxed">{step}</p>
+                          <p className="text-sm text-foreground leading-relaxed flex-1">{step}</p>
                         </div>
                       ))}
                     </div>
@@ -283,25 +290,25 @@ export default function Services() {
 
                   {/* Documents */}
                   <div>
-                    <h3 className="font-semibold text-foreground mb-3">
+                    <h3 className="font-semibold text-foreground mb-3 text-base">
                       {language === "fr" ? "Documents requis" : "الوثائق المطلوبة"}
                     </h3>
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       {docs.map((doc, i) => (
-                        <div key={i} className={`flex items-center gap-2 ${isRtl ? "flex-row-reverse" : ""}`}>
-                          <CheckCircle className="w-4 h-4 text-primary shrink-0" />
-                          <span className="text-sm text-foreground">{doc}</span>
+                        <div key={i} className="flex items-start gap-2.5">
+                          <CheckCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                          <span className="text-sm text-foreground leading-relaxed flex-1">{doc}</span>
                         </div>
                       ))}
                     </div>
                   </div>
 
                   {/* Tip */}
-                  <div className={`flex items-start gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 ${isRtl ? "flex-row-reverse" : ""}`}>
-                    <span className="text-xl">💡</span>
+                  <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                    <span className="text-xl shrink-0">💡</span>
                     <div>
-                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1">{language === "fr" ? "Bon à savoir" : "معلومة مفيدة"}</p>
-                      <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                      <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">{language === "fr" ? "Bon à savoir" : "معلومة مفيدة"}</p>
+                      <p className="text-xs text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
                         {language === "fr" ? m.tip.fr : m.tip.ar}
                       </p>
                     </div>
@@ -309,44 +316,44 @@ export default function Services() {
 
                   {/* Contact support */}
                   <div>
-                    <h3 className="font-semibold text-foreground mb-3">
+                    <h3 className="font-semibold text-foreground mb-3 text-base">
                       {language === "fr" ? "Contacter le support" : "التواصل مع الدعم"}
                     </h3>
-                    <div className="grid grid-cols-2 gap-3">
-                      <a href={`mailto:${m.supportEmail}`} className={`flex items-center gap-2 p-3 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors ${isRtl ? "flex-row-reverse" : ""}`}>
-                        <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <a href={`mailto:${m.supportEmail}`} className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors">
+                        <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center shrink-0">
                           <Mail className="w-4 h-4 text-primary" />
                         </div>
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-foreground">Email</p>
                           <p className="text-xs text-muted-foreground truncate">{m.supportEmail}</p>
                         </div>
                       </a>
-                      <a href={`tel:${m.supportPhone}`} className={`flex items-center gap-2 p-3 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors ${isRtl ? "flex-row-reverse" : ""}`}>
-                        <div className="w-8 h-8 bg-secondary/10 rounded-lg flex items-center justify-center">
+                      <a href={`tel:${m.supportPhone}`} className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors">
+                        <div className="w-8 h-8 bg-secondary/10 rounded-lg flex items-center justify-center shrink-0">
                           <Phone className="w-4 h-4 text-secondary" />
                         </div>
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-foreground">Téléphone</p>
                           <p className="text-xs text-muted-foreground">{m.supportPhone}</p>
                         </div>
                       </a>
                     </div>
                   </div>
+                </div>
 
-                  {/* CTA */}
-                  <div className="flex gap-3 pt-2 sticky bottom-0 pb-4 bg-background">
-                    <Button variant="outline" className="flex-1" onClick={() => setDetailService(null)}>
-                      {language === "fr" ? "Fermer" : "إغلاق"}
-                    </Button>
-                    <Button
-                      className="flex-1 gap-2"
-                      onClick={() => { setDetailService(null); setSelectedService(detailService); }}
-                    >
-                      {language === "fr" ? "Déposer ma demande" : "تقديم الطلب"}
-                      <Arrow className="w-4 h-4" />
-                    </Button>
-                  </div>
+                {/* Sticky CTA Bottom */}
+                <div className="p-4 border-t border-border bg-background/95 backdrop-blur-sm sticky bottom-0 z-20 flex gap-3 shadow-lg">
+                  <Button variant="outline" className="flex-1" onClick={() => setDetailService(null)}>
+                    {language === "fr" ? "Fermer" : "إغلاق"}
+                  </Button>
+                  <Button
+                    className="flex-1 gap-2 font-medium"
+                    onClick={() => { setDetailService(null); setSelectedService(detailService); }}
+                  >
+                    {language === "fr" ? "Déposer ma demande" : "تقديم الطلب"}
+                    <Arrow className="w-4 h-4" />
+                  </Button>
                 </div>
               </motion.div>
             </motion.div>

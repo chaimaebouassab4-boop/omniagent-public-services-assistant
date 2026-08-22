@@ -328,6 +328,49 @@ async def upload_personal_document(
     return serialize_user(current_user)
 
 
+@router.get("/users/me/documents/personal/{doc_id}")
+async def view_personal_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """View or download a personal document attached to the user profile."""
+    docs = current_user.personal_documents or []
+    target = next((d for d in docs if d.get("id") == doc_id or d.get("name") == doc_id), None)
+    if not target or not target.get("path") or not Path(target["path"]).exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file not found")
+
+    stored_path = Path(target["path"])
+    media_type = target.get("mimeType") or "application/octet-stream"
+    original_name = target.get("name") or stored_path.name
+    return FileResponse(
+        path=stored_path,
+        media_type=media_type,
+        headers={"Content-Disposition": f'inline; filename="{original_name}"'},
+    )
+
+
+@router.delete("/users/me/documents/personal/{doc_id}")
+async def delete_personal_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Delete a personal document from the user's profile."""
+    docs = current_user.personal_documents or []
+    target = next((d for d in docs if d.get("id") == doc_id or d.get("name") == doc_id), None)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    if target.get("path") and Path(target["path"]).exists():
+        Path(target["path"]).unlink(missing_ok=True)
+
+    current_user.personal_documents = [d for d in docs if d.get("id") != target.get("id")]
+    db.commit()
+    db.refresh(current_user)
+    return serialize_user(current_user)
+
+
 # --------------------------------------------------------------------------- #
 # Admin login (kept for the enveloped/legacy contract)
 # --------------------------------------------------------------------------- #

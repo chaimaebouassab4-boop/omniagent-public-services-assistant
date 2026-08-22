@@ -17,11 +17,19 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, Mic, Send, Bot, User, CheckCircle2, Clock, FileText, Loader2 } from "lucide-react";
+import { Upload, Mic, Send, Bot, User, CheckCircle2, Clock, FileText, Loader2, Eye, Download, Trash2, AlertTriangle } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { uploadDocument, validateFile } from "@/lib/documents";
+import { uploadDocument, validateFile, fetchCaseDocPreview, deleteCaseDocument } from "@/lib/documents";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 function formatFileSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -42,8 +50,73 @@ export default function CaseDetail() {
 
   const [messageInput, setMessageInput] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<{ name: string; url: string; mimeType: string } | null>(null);
+  const [previewLoadingId, setPreviewLoadingId] = useState<number | string | null>(null);
+  const [docToDelete, setDocToDelete] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleViewDoc = async (doc: any) => {
+    setPreviewLoadingId(doc.id);
+    try {
+      const blob = await fetchCaseDocPreview(caseId, doc.id);
+      if (previewDoc?.url) URL.revokeObjectURL(previewDoc.url);
+      const url = URL.createObjectURL(blob);
+      setPreviewDoc({ name: doc.name, url, mimeType: blob.type || doc.fileType || "application/pdf" });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Impossible d'afficher le document" : "تعذر عرض الوثيقة",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setPreviewLoadingId(null);
+    }
+  };
+
+  const handleDownloadDoc = async (doc: any) => {
+    try {
+      const blob = await fetchCaseDocPreview(caseId, doc.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = doc.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Échec du téléchargement" : "فشل التحميل",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
+  };
+
+  const confirmDeleteDoc = async () => {
+    if (!docToDelete) return;
+    setIsDeleting(true);
+    try {
+      await deleteCaseDocument(caseId, docToDelete.id);
+      toast({
+        title: language === "fr" ? "Document supprimé" : "تم حذف الوثيقة بنجاح",
+        description: docToDelete.name,
+      });
+      setDocToDelete(null);
+      queryClient.invalidateQueries({ queryKey: getListDocumentsQueryKey(caseId) });
+      queryClient.invalidateQueries({ queryKey: ['case-timeline', caseId] });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Échec de suppression" : "فشل الحذف",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -261,32 +334,75 @@ export default function CaseDetail() {
             <CardContent>
               <div className="space-y-2">
                 {documents?.map((doc) => (
-                  <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
-                    <FileText className="w-5 h-5 text-primary shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium truncate" title={doc.name}>{doc.name}</div>
-                      <div className="text-xs text-muted-foreground">{formatFileSize(doc.fileSize)}</div>
+                  <div key={doc.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <FileText className="w-5 h-5 text-primary shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate" title={doc.name}>{doc.name}</div>
+                        <div className="text-xs text-muted-foreground">{formatFileSize(doc.fileSize)}</div>
+                      </div>
                     </div>
-                    <Badge
-                      variant="outline"
-                      className={
-                        doc.status === "verified"
-                          ? "border-green-300 bg-green-50 text-green-700"
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Badge
+                        variant="outline"
+                        className={
+                          doc.status === "verified"
+                            ? "border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
+                            : doc.status === "rejected"
+                            ? "border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
+                            : "border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                        }
+                      >
+                        {doc.status === "verified"
+                          ? (language === "fr" ? "Vérifié" : "تم التحقق")
                           : doc.status === "rejected"
-                          ? "border-red-300 bg-red-50 text-red-700"
-                          : "border-amber-300 bg-amber-50 text-amber-700"
-                      }
-                    >
-                      {doc.status === "verified"
-                        ? (language === "fr" ? "Vérifié" : "تم التحقق")
-                        : doc.status === "rejected"
-                        ? (language === "fr" ? "Rejeté" : "مرفوض")
-                        : (language === "fr" ? "En attente" : "قيد المراجعة")}
-                    </Badge>
+                          ? (language === "fr" ? "Rejeté" : "مرفوض")
+                          : (language === "fr" ? "En attente" : "قيد المراجعة")}
+                      </Badge>
+
+                      {/* View Button */}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-primary hover:bg-primary/10"
+                        title={language === "fr" ? "Voir la pièce" : "معاينة الوثيقة"}
+                        disabled={previewLoadingId === doc.id}
+                        onClick={() => handleViewDoc(doc)}
+                      >
+                        {previewLoadingId === doc.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </Button>
+
+                      {/* Download Button */}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        title={language === "fr" ? "Télécharger" : "تحميل"}
+                        onClick={() => handleDownloadDoc(doc)}
+                      >
+                        <Download className="w-4 h-4" />
+                      </Button>
+
+                      {/* Delete Button */}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40"
+                        title={language === "fr" ? "Supprimer" : "حذف الوثيقة"}
+                        onClick={() => setDocToDelete(doc)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
                 {!documents?.length && (
-                  <div className="text-sm text-muted-foreground text-center py-4">
+                  <div className="text-sm text-muted-foreground text-center py-4 border rounded-lg border-dashed">
                     {language === "fr" ? "Aucun document envoyé pour l'instant." : "لم يتم إرسال أي وثيقة بعد."}
                   </div>
                 )}
@@ -319,6 +435,118 @@ export default function CaseDetail() {
         </div>
 
       </div>
+
+      {/* Document Viewer Modal */}
+      <Dialog
+        open={Boolean(previewDoc)}
+        onOpenChange={(open) => {
+          if (!open && previewDoc) {
+            URL.revokeObjectURL(previewDoc.url);
+            setPreviewDoc(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-4 sm:p-6" dir={isRtl ? "rtl" : "ltr"}>
+          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b">
+            <div className="text-start">
+              <DialogTitle className="text-base sm:text-lg font-bold truncate max-w-[500px]">
+                {previewDoc?.name}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                {language === "fr" ? "Aperçu de la pièce justificative" : "معاينة الوثيقة المرفقة"}
+              </DialogDescription>
+            </div>
+            {previewDoc && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 shrink-0"
+                onClick={() => {
+                  const a = document.createElement("a");
+                  a.href = previewDoc.url;
+                  a.download = previewDoc.name;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                }}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{language === "fr" ? "Télécharger" : "تحميل"}</span>
+              </Button>
+            )}
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-auto rounded-xl border bg-muted/30 flex items-center justify-center p-2">
+            {previewDoc?.mimeType === "application/pdf" || previewDoc?.name.toLowerCase().endsWith(".pdf") ? (
+              <iframe
+                src={previewDoc.url}
+                title={previewDoc.name}
+                className="w-full h-full min-h-[60vh] rounded-lg"
+              />
+            ) : previewDoc ? (
+              <img
+                src={previewDoc.url}
+                alt={previewDoc.name}
+                className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Professional Delete Confirmation Modal */}
+      <Dialog
+        open={Boolean(docToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setDocToDelete(null);
+        }}
+      >
+        <DialogContent className="max-w-md p-6 sm:p-7 rounded-2xl shadow-2xl" dir={isRtl ? "rtl" : "ltr"}>
+          <div className="flex flex-col items-center text-center space-y-4 pt-2">
+            <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-950/60 flex items-center justify-center text-red-600 ring-8 ring-red-50 dark:ring-red-950/30">
+              <Trash2 className="w-7 h-7" />
+            </div>
+            <div className="space-y-2">
+              <DialogTitle className="text-xl font-bold">
+                {language === "fr" ? "Supprimer le document ?" : "تأكيد حذف الوثيقة"}
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground leading-relaxed px-2">
+                {language === "fr" ? (
+                  <>
+                    Êtes-vous sûr de vouloir supprimer définitivement <span className="font-semibold text-foreground font-mono text-xs px-1.5 py-0.5 rounded bg-muted">"{docToDelete?.name}"</span> ? Cette action ne peut pas être annulée.
+                  </>
+                ) : (
+                  <>
+                    هل أنت متأكد من رغبتك في حذف الوثيقة <span className="font-semibold text-foreground font-mono text-xs px-1.5 py-0.5 rounded bg-muted">"{docToDelete?.name}"</span> نهائياً؟ لن تتمكن من استرجاع هذا الملف.
+                  </>
+                )}
+              </DialogDescription>
+            </div>
+          </div>
+          <div className="flex items-center justify-center gap-3 pt-5 border-t mt-4">
+            <Button
+              variant="outline"
+              className="flex-1 h-10 font-medium"
+              disabled={isDeleting}
+              onClick={() => setDocToDelete(null)}
+            >
+              {language === "fr" ? "Annuler" : "تراجع"}
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 h-10 gap-2 bg-red-600 hover:bg-red-700 text-white font-medium"
+              disabled={isDeleting}
+              onClick={confirmDeleteDoc}
+            >
+              {isDeleting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              <span>{language === "fr" ? "Supprimer" : "تأكيد الحذف"}</span>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

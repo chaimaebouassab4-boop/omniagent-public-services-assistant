@@ -59,6 +59,34 @@ export async function fetchCinPreview(): Promise<Blob> {
   return response.blob();
 }
 
+export async function fetchPersonalDocPreview(docId: string): Promise<Blob> {
+  const token = getToken();
+  const response = await fetch(apiUrl(`/api/users/me/documents/personal/${docId}`), {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) {
+    handleUnauthorized(response.status);
+    const data = await response.json().catch(() => null);
+    const detail = data && typeof data.detail === "string" ? data.detail : null;
+    throw new Error(detail ?? `Preview failed (HTTP ${response.status})`);
+  }
+  return response.blob();
+}
+
+export async function fetchCaseDocPreview(caseId: number, docId: string | number): Promise<Blob> {
+  const token = getToken();
+  const response = await fetch(apiUrl(`/api/cases/${caseId}/documents/${docId}/view`), {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) {
+    handleUnauthorized(response.status);
+    const data = await response.json().catch(() => null);
+    const detail = data && typeof data.detail === "string" ? data.detail : null;
+    throw new Error(detail ?? `Preview failed (HTTP ${response.status})`);
+  }
+  return response.blob();
+}
+
 export async function uploadDocument(
   caseId: number,
   file: File,
@@ -95,4 +123,35 @@ export async function uploadChatDocument(
   formData.append("language", language);
   if (sessionId) formData.append("sessionId", sessionId);
   return postMultipart<Message>("/api/chat/documents", formData);
+}
+
+/** Deletes a document from a case. */
+export async function deleteCaseDocument(caseId: number, docId: string | number): Promise<void> {
+  const token = getToken();
+  const response = await fetch(apiUrl(`/api/cases/${caseId}/documents/${docId}`), {
+    method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) {
+    handleUnauthorized(response.status);
+    const data = await response.json().catch(() => null);
+    const detail = data && typeof data.detail === "string" ? data.detail : null;
+    throw new Error(detail ?? `Delete failed (HTTP ${response.status})`);
+  }
+}
+
+/** Deletes a personal document from profile; returns refreshed user profile. */
+export async function deletePersonalDocument(docId: string): Promise<AuthUser> {
+  const token = getToken();
+  const response = await fetch(apiUrl(`/api/users/me/documents/personal/${docId}`), {
+    method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) {
+    handleUnauthorized(response.status);
+    const data = await response.json().catch(() => null);
+    const detail = data && typeof data.detail === "string" ? data.detail : null;
+    throw new Error(detail ?? `Delete failed (HTTP ${response.status})`);
+  }
+  return response.json();
 }

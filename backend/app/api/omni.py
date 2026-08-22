@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -410,6 +411,84 @@ async def upload_case_document(
 
     count = db.query(Document).filter(Document.case_id == case.id).count()
     return serialize_document(document, count, case.public_id)
+
+
+@router.get("/cases/{case_id}/documents/{doc_id}/view")
+async def view_case_document(
+    case_id: int,
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve uploaded case document for inline preview or download (for citizen & admin)."""
+    case = get_case_or_404(db, case_id)
+    if not current_user.is_admin and case.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    doc = (
+        db.query(Document)
+        .filter(Document.case_id == case.id, (Document.id == doc_id) | (Document.file_name == doc_id))
+        .first()
+    )
+
+    if not doc and doc_id.isdigit():
+        docs = db.query(Document).filter(Document.case_id == case.id).order_by(Document.uploaded_at.asc()).all()
+        idx = int(doc_id) - 1
+        if 0 <= idx < len(docs):
+            doc = docs[idx]
+
+    if not doc or not Path(doc.file_path).exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file not found")
+
+    return FileResponse(
+        path=doc.file_path,
+        media_type=doc.mime_type or "application/octet-stream",
+        filename=doc.file_name,
+        headers={"Content-Disposition": f'inline; filename="{doc.file_name}"'},
+    )
+
+
+@router.delete("/cases/{case_id}/documents/{doc_id}")
+async def delete_case_document(
+    case_id: int,
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Delete an uploaded case document (by citizen owner or admin)."""
+    case = get_case_or_404(db, case_id)
+    if not current_user.is_admin and case.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    doc = (
+        db.query(Document)
+        .filter(Document.case_id == case.id, (Document.id == doc_id) | (Document.file_name == doc_id))
+        .first()
+    )
+
+    if not doc and doc_id.isdigit():
+        docs = db.query(Document).filter(Document.case_id == case.id).order_by(Document.uploaded_at.asc()).all()
+        idx = int(doc_id) - 1
+        if 0 <= idx < len(docs):
+            doc = docs[idx]
+
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    file_path = Path(doc.file_path) if doc.file_path else None
+    if file_path and file_path.exists():
+        file_path.unlink(missing_ok=True)
+
+    db.delete(doc)
+    log_action(
+        db,
+        case.id,
+        "document_deleted",
+        current_user.id,
+        {"file_name": doc.file_name},
+    )
+    db.commit()
+    return {"status": "success", "message": "Document deleted successfully"}
 
 
 @router.get("/cases/{case_id}/messages")
@@ -960,3 +1039,50 @@ async def admin_update_case(
     db.commit()
     db.refresh(case)
     return serialize_case(case)
+
+
+@router.get("/admin/notifications")
+async def admin_notifications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Fetch pending case alerts and recent citizen submissions for admin."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    pending_count = (
+        db.query(func.count(Case.id))
+        .filter(Case.status.in_(("submitted", "in_review")))
+        .scalar()
+        or 0
+    )
+
+    recent_cases = (
+        db.query(Case)
+        .order_by(Case.created_at.desc())
+        .limit(20)
+        .all()
+    )
+
+    notifications = []
+    for c in recent_cases:
+        service_name_fr = c.service.name_fr if c.service else "Service administratif"
+        service_name_ar = c.service.name_ar if c.service else "خدمة إدارية"
+        notifications.append({
+            "id": f"notif-case-{c.id}",
+            "caseId": c.public_id,
+            "type": "new_request",
+            "referenceNumber": c.reference_number,
+            "applicantName": c.applicant_name or "المواطن",
+            "serviceNameFr": service_name_fr,
+            "serviceNameAr": service_name_ar,
+            "status": c.status,
+            "createdAt": c.created_at.isoformat() if c.created_at else None,
+            "messageFr": f"Nouvelle demande : {service_name_fr} ({c.reference_number}) déposée par {c.applicant_name or 'un citoyen'}",
+            "messageAr": f"طلب جديد : {service_name_ar} ({c.reference_number}) مقدم من {c.applicant_name or 'مواطن'}",
+        })
+
+    return {
+        "pendingCount": pending_count,
+        "notifications": notifications,
+    }
