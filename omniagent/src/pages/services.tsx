@@ -2,12 +2,14 @@ import { useI18n } from "@/lib/i18n";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useListServices, useCreateCase } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Clock, FileText, ArrowRight, ArrowLeft, X, Phone, Mail,
-  CheckCircle, ChevronRight, Search, Star, ExternalLink
+  CheckCircle, ChevronRight, Search, ExternalLink, Banknote,
+  Home, Baby, Heart, ScrollText, HeartPulse, UserCheck,
+  Building2, ShieldCheck, Award, FileCheck, SearchX,
+  type LucideIcon,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -16,10 +18,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { useState, useMemo } from "react";
+import { useLocation, Link } from "wouter";
 import { SERVICES_META } from "@/lib/services-data";
 
+/* ─── Form Schema ─────────────────────────────────────────────── */
 const formSchema = z.object({
   applicantName: z.string().min(2),
   applicantEmail: z.string().email(),
@@ -37,12 +40,48 @@ type ServiceFromApi = {
   requiredDocuments: string[] | null;
 };
 
+/* ─── Icon & Category Mappings ────────────────────────────────── */
+const SERVICE_ICON_MAP: Record<number, { icon: LucideIcon; color: string; bg: string }> = {
+  1:  { icon: Home,        color: "text-blue-600",   bg: "bg-blue-50 dark:bg-blue-950/40" },
+  2:  { icon: Baby,        color: "text-sky-500",    bg: "bg-sky-50 dark:bg-sky-950/40" },
+  3:  { icon: Heart,       color: "text-rose-500",   bg: "bg-rose-50 dark:bg-rose-950/40" },
+  4:  { icon: ScrollText,  color: "text-slate-500",  bg: "bg-slate-50 dark:bg-slate-800/40" },
+  5:  { icon: HeartPulse,  color: "text-emerald-500",bg: "bg-emerald-50 dark:bg-emerald-950/40" },
+  6:  { icon: UserCheck,   color: "text-indigo-500", bg: "bg-indigo-50 dark:bg-indigo-950/40" },
+  7:  { icon: Building2,   color: "text-purple-500", bg: "bg-purple-50 dark:bg-purple-950/40" },
+  8:  { icon: ShieldCheck, color: "text-amber-600",  bg: "bg-amber-50 dark:bg-amber-950/40" },
+  9:  { icon: Award,       color: "text-teal-500",   bg: "bg-teal-50 dark:bg-teal-950/40" },
+  10: { icon: FileCheck,   color: "text-cyan-500",   bg: "bg-cyan-50 dark:bg-cyan-950/40" },
+};
+
+const CATEGORIES = {
+  all:       { fr: "Tous",        ar: "الكل" },
+  civil:     { fr: "État civil",  ar: "الحالة المدنية" },
+  family:    { fr: "Famille",     ar: "الأسرة" },
+  justice:   { fr: "Justice",     ar: "العدل" },
+  property:  { fr: "Propriété",   ar: "العقار" },
+} as const;
+
+type CategoryKey = keyof typeof CATEGORIES;
+
+const SERVICE_CATEGORY: Record<number, CategoryKey> = {
+  1: "civil", 2: "civil", 4: "civil", 5: "civil", 10: "civil",
+  3: "family", 6: "family",
+  8: "justice", 9: "justice",
+  7: "property",
+};
+
+/* ─── Helpers ─────────────────────────────────────────────────── */
+const getIcon = (id: number) => SERVICE_ICON_MAP[id] ?? SERVICE_ICON_MAP[1];
+
+/* ─── Component ───────────────────────────────────────────────── */
 export default function Services() {
   const { language, isRtl } = useI18n();
   const { data: services, isLoading } = useListServices();
   const [selectedService, setSelectedService] = useState<ServiceFromApi | null>(null);
   const [detailService, setDetailService] = useState<ServiceFromApi | null>(null);
   const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");
   const Arrow = isRtl ? ArrowLeft : ArrowRight;
   const [_, setLocation] = useLocation();
 
@@ -60,147 +99,197 @@ export default function Services() {
     );
   };
 
-  const filtered = (services ?? []).filter((s) => {
-    const q = search.toLowerCase();
-    return !q || s.nameFr.toLowerCase().includes(q) || s.nameAr.includes(q);
-  });
+  const filtered = useMemo(() => {
+    return (services ?? []).filter((s) => {
+      const q = search.toLowerCase();
+      const matchesSearch = !q || s.nameFr.toLowerCase().includes(q) || s.nameAr.includes(q);
+      const matchesCategory = activeCategory === "all" || SERVICE_CATEGORY[s.id] === activeCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [services, search, activeCategory]);
 
   const getName = (s: ServiceFromApi) => language === "fr" ? s.nameFr : s.nameAr;
   const getDesc = (s: ServiceFromApi) => language === "fr" ? s.descriptionFr : s.descriptionAr;
-
   const meta = (id: number) => SERVICES_META[id] ?? SERVICES_META[1];
 
   return (
     <AppLayout>
-      <div className="max-w-6xl mx-auto space-y-8">
-        {/* Header */}
-        <div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${isRtl ? "sm:flex-row-reverse" : ""}`}>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">
-              {language === "fr" ? "Catalogue des Services" : language === "ar" ? "فهرس الخدمات" : "كاتالوج الخدمات"}
+      <div className="max-w-6xl mx-auto space-y-6">
+
+        {/* ── Breadcrumb ──────────────────────────────────────── */}
+        <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Link href="/" className="hover:text-foreground transition-colors">
+            {language === "fr" ? "Accueil" : "الرئيسية"}
+          </Link>
+          <ChevronRight className="w-3 h-3" />
+          <span className="text-foreground font-medium">
+            {language === "fr" ? "Services" : "الخدمات"}
+          </span>
+        </nav>
+
+        {/* ── Page Header ─────────────────────────────────────── */}
+        <div className={`flex flex-col md:flex-row items-start md:items-end justify-between gap-4 ${isRtl ? "md:flex-row-reverse" : ""}`}>
+          <div className="space-y-1.5">
+            <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+              {language === "fr" ? "Catalogue des services" : "فهرس الخدمات"}
             </h1>
-            <p className="text-muted-foreground mt-1">
-              {language === "fr" ? "Toutes vos démarches, un seul endroit" : language === "ar" ? "جميع إجراءاتك في مكان واحد" : "جميع خدماتك ف بلاصة واحدة"}
+            <p className="text-sm text-muted-foreground max-w-lg">
+              {language === "fr"
+                ? "Trouvez rapidement le service administratif dont vous avez besoin."
+                : "ابحث بسرعة عن الخدمة الإدارية التي تحتاجها."}
             </p>
           </div>
           {/* Search */}
-          <div className="relative w-full sm:w-72">
+          <div className="relative w-full md:w-72">
             <Search className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground ${isRtl ? "right-3" : "left-3"}`} />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={language === "fr" ? "Rechercher un service..." : "ابحث عن خدمة..."}
-              className={`w-full h-10 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 ${isRtl ? "pr-10 pl-4" : "pl-10 pr-4"}`}
+              placeholder={language === "fr" ? "Rechercher un service…" : "ابحث عن خدمة…"}
+              className={`w-full h-9 rounded-lg border border-border bg-card text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors ${isRtl ? "pr-9 pl-3" : "pl-9 pr-3"}`}
             />
           </div>
         </div>
 
-        {/* Grid */}
+        {/* ── Category Filters ────────────────────────────────── */}
+        <div className={`flex items-center gap-1 overflow-x-auto pb-1 ${isRtl ? "flex-row-reverse" : ""}`}>
+          {(Object.keys(CATEGORIES) as CategoryKey[]).map((key) => (
+            <button
+              key={key}
+              onClick={() => setActiveCategory(key)}
+              className={`px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+                activeCategory === key
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+            >
+              {language === "fr" ? CATEGORIES[key].fr : CATEGORIES[key].ar}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Service Grid ────────────────────────────────────── */}
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-border overflow-hidden">
-                <Skeleton className="h-44 w-full" />
-                <div className="p-5 space-y-3">
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-2/3" />
-                  <Skeleton className="h-9 w-full" />
+              <div key={i} className="rounded-xl border border-border bg-card p-5 space-y-3">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-10 w-10 rounded-lg" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
                 </div>
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="h-8 w-full" />
               </div>
             ))}
           </div>
         ) : (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
           >
             {filtered.map((service, i) => {
               const m = meta(service.id);
+              const iconInfo = getIcon(service.id);
+              const Icon = iconInfo.icon;
+
               return (
                 <motion.div
                   key={service.id}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.07 }}
-                  className="group flex flex-col rounded-2xl border border-border bg-card overflow-hidden hover:shadow-lg transition-all hover:-translate-y-1"
+                  transition={{ delay: i * 0.04 }}
+                  className="group flex flex-col rounded-xl border border-border bg-card overflow-hidden hover:shadow-md hover:border-primary/40 transition-all duration-200"
                 >
-                  {/* Image */}
-                  <div className="relative h-44 overflow-hidden bg-muted">
-                    <img
-                      src={m.image}
-                      alt={service.nameFr}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-                    <div className="absolute top-3 left-3 flex gap-2">
-                      <span className="text-2xl">{m.emoji}</span>
-                    </div>
-                    <div className="absolute bottom-3 left-3 right-3">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-white/20 text-white border-white/30 text-xs backdrop-blur-sm">
-                          <Clock className="w-3 h-3 mr-1" />{service.processingDays}j
-                        </Badge>
-                        <Badge className="bg-white/20 text-white border-white/30 text-xs backdrop-blur-sm">
-                          {m.fee}
-                        </Badge>
+                  <div className="flex flex-col flex-1 p-5 gap-4">
+                    {/* Icon + Status row */}
+                    <div className="flex items-start justify-between">
+                      <div className={`w-10 h-10 rounded-lg ${iconInfo.bg} flex items-center justify-center`}>
+                        <Icon className={`w-5 h-5 ${iconInfo.color}`} />
                       </div>
+                      <span className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        {language === "fr" ? "Disponible" : "متاح"}
+                      </span>
                     </div>
-                  </div>
 
-                  {/* Content */}
-                  <div className="flex flex-col flex-1 p-5 gap-3">
+                    {/* Title */}
                     <div>
-                      <h3 className={`font-bold text-foreground text-base leading-snug ${isRtl ? "text-right" : ""}`}>
+                      <h3 className={`font-semibold text-foreground text-[15px] leading-snug ${isRtl ? "text-right" : ""}`}>
                         {getName(service)}
                       </h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className={`text-[11px] text-muted-foreground/70 mt-0.5 ${isRtl ? "text-right" : ""}`}>
                         {language === "fr" ? service.nameAr : service.nameFr}
                       </p>
                     </div>
+
+                    {/* Description */}
                     <p className={`text-sm text-muted-foreground line-clamp-2 leading-relaxed flex-1 ${isRtl ? "text-right" : ""}`}>
                       {getDesc(service)}
                     </p>
 
-                    {/* Quick info */}
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground border-t border-border pt-3">
-                      <div className="flex items-center gap-1">
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>{service.requiredDocuments?.length ?? 0} {language === "fr" ? "docs" : "وثائق"}</span>
+                    {/* Admin info */}
+                    <div className="flex flex-col gap-1.5 pt-3 border-t border-border/60 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                        <span>
+                          {language === "fr" ? "Délai estimé" : "المدة المتوقعة"} : <span className="text-foreground font-medium">{service.processingDays} {language === "fr" ? "jours" : "أيام"}</span>
+                        </span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                        <span>{m.fee}</span>
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                        <span>
+                          {language === "fr" ? "Documents requis" : "الوثائق المطلوبة"} : <span className="text-foreground font-medium">{service.requiredDocuments?.length ?? 0}</span>
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Banknote className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                        <span>
+                          {language === "fr" ? "Frais" : "الرسوم"} : <span className="text-foreground font-medium">{m.fee}</span>
+                        </span>
                       </div>
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex gap-2 mt-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 text-xs gap-1"
-                        onClick={() => setDetailService(service)}
-                      >
-                        {language === "fr" ? "Voir détails" : "التفاصيل"}
-                        <ChevronRight className="w-3 h-3" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="flex-1 text-xs gap-1"
-                        onClick={() => setSelectedService(service)}
-                      >
-                        {language === "fr" ? "Déposer" : "تقديم"}
-                        <Arrow className="w-3 h-3" />
-                      </Button>
-                    </div>
+                    {/* CTA */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full mt-1 text-xs font-medium text-primary border-primary/30 hover:bg-primary/5 hover:border-primary/50 gap-1.5 justify-center transition-colors"
+                      onClick={() => setDetailService(service)}
+                    >
+                      {language === "fr" ? "Consulter le service" : "الاطلاع على الخدمة"}
+                      <Arrow className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
                 </motion.div>
               );
             })}
+
+            {/* Empty State */}
             {filtered.length === 0 && (
-              <div className="col-span-3 text-center py-16 text-muted-foreground">
-                {language === "fr" ? "Aucun service trouvé." : "لم يُعثر على أي خدمة."}
+              <div className="col-span-full flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <SearchX className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <h3 className="text-base font-semibold text-foreground mb-1">
+                  {language === "fr" ? "Aucun service trouvé" : "لم يُعثر على أي خدمة"}
+                </h3>
+                <p className="text-sm text-muted-foreground max-w-sm mb-4">
+                  {language === "fr"
+                    ? "Nous n'avons trouvé aucun service correspondant à votre recherche."
+                    : "لم نعثر على أي خدمة تطابق بحثك."}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setSearch(""); setActiveCategory("all"); }}
+                  className="text-xs"
+                >
+                  {language === "fr" ? "Réinitialiser les filtres" : "إعادة تعيين"}
+                </Button>
               </div>
             )}
           </motion.div>
@@ -211,6 +300,8 @@ export default function Services() {
       <AnimatePresence>
         {detailService && (() => {
           const m = meta(detailService.id);
+          const iconInfo = getIcon(detailService.id);
+          const Icon = iconInfo.icon;
           const steps = language === "fr" ? m.stepsFr : m.stepsAr;
           const docs = language === "fr" ? m.docsRequiredFr : m.docsRequiredAr;
           return (
@@ -223,37 +314,41 @@ export default function Services() {
               dir={isRtl ? "rtl" : "ltr"}
             >
               <div
-                className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm"
                 onClick={() => setDetailService(null)}
               />
               <motion.div
-                initial={{ opacity: 0, x: isRtl ? -80 : 80 }}
+                initial={{ opacity: 0, x: isRtl ? -60 : 60 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: isRtl ? -80 : 80 }}
-                transition={{ type: "spring", damping: 28, stiffness: 260 }}
+                exit={{ opacity: 0, x: isRtl ? -60 : 60 }}
+                transition={{ type: "spring", damping: 30, stiffness: 280 }}
                 className="relative z-10 w-full sm:max-w-xl max-w-full h-full bg-background shadow-2xl overflow-y-auto flex flex-col border-x border-border"
               >
-                {/* Image header */}
-                <div className="relative h-56 shrink-0">
-                  <img src={m.image} alt={detailService.nameFr} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+                {/* Header with icon (no image) */}
+                <div className={`relative p-6 pb-5 ${iconInfo.bg}`}>
                   <button
                     onClick={() => setDetailService(null)}
                     aria-label="Close"
-                    className={`absolute top-4 ${isRtl ? "left-4" : "right-4"} w-9 h-9 bg-black/50 hover:bg-black/75 rounded-full flex items-center justify-center text-white transition-colors backdrop-blur-sm shadow-md`}
+                    className={`absolute top-4 ${isRtl ? "left-4" : "right-4"} w-8 h-8 bg-black/10 hover:bg-black/20 rounded-full flex items-center justify-center text-foreground transition-colors`}
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-4 h-4" />
                   </button>
-                  <div className="absolute bottom-4 left-5 right-5">
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      <Badge className="bg-primary text-white border-0 font-medium">{m.fee}</Badge>
-                      <Badge className="bg-white/25 text-white border-white/40 backdrop-blur-sm font-medium">
-                        <Clock className="w-3.5 h-3.5 mr-1" />{detailService.processingDays} {language === "fr" ? "jours" : "أيام"}
-                      </Badge>
-                    </div>
-                    <h2 className="text-white font-bold text-2xl leading-tight drop-shadow-sm">{getName(detailService)}</h2>
-                    <p className="text-white/80 text-xs mt-0.5">{language === "fr" ? detailService.nameAr : detailService.nameFr}</p>
+
+                  <div className={`w-12 h-12 rounded-xl bg-white/80 dark:bg-white/10 flex items-center justify-center mb-4 shadow-sm`}>
+                    <Icon className={`w-6 h-6 ${iconInfo.color}`} />
                   </div>
+
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-0.5 text-[11px] font-medium rounded-md bg-primary/10 text-primary">
+                      {m.fee}
+                    </span>
+                    <span className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-md bg-muted text-muted-foreground">
+                      <Clock className="w-3 h-3" />
+                      {detailService.processingDays} {language === "fr" ? "jours" : "أيام"}
+                    </span>
+                  </div>
+                  <h2 className="font-semibold text-xl text-foreground leading-tight">{getName(detailService)}</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">{language === "fr" ? detailService.nameAr : detailService.nameFr}</p>
                 </div>
 
                 <div className="p-6 space-y-6 flex-1 overflow-y-auto">
@@ -263,8 +358,8 @@ export default function Services() {
                   </p>
 
                   {/* Office */}
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-muted/60">
-                    <ExternalLink className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 border border-border/50">
+                    <ExternalLink className="w-4 h-4 text-secondary mt-0.5 shrink-0" />
                     <div>
                       <p className="text-xs font-semibold text-foreground mb-0.5">{language === "fr" ? "Organisme compétent" : "الجهة المختصة"}</p>
                       <p className="text-xs text-muted-foreground">{language === "fr" ? m.office.fr : m.office.ar}</p>
@@ -273,13 +368,13 @@ export default function Services() {
 
                   {/* Steps */}
                   <div>
-                    <h3 className="font-semibold text-foreground mb-3 text-base">
+                    <h3 className="font-semibold text-foreground mb-3 text-sm">
                       {language === "fr" ? "Étapes à suivre" : "الخطوات المطلوبة"}
                     </h3>
                     <div className="space-y-3">
                       {steps.map((step, i) => (
                         <div key={i} className="flex items-start gap-3">
-                          <div className="w-6 h-6 rounded-full bg-primary text-white text-xs flex items-center justify-center shrink-0 font-bold mt-0.5">
+                          <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center shrink-0 font-semibold mt-0.5">
                             {i + 1}
                           </div>
                           <p className="text-sm text-foreground leading-relaxed flex-1">{step}</p>
@@ -290,13 +385,13 @@ export default function Services() {
 
                   {/* Documents */}
                   <div>
-                    <h3 className="font-semibold text-foreground mb-3 text-base">
+                    <h3 className="font-semibold text-foreground mb-3 text-sm">
                       {language === "fr" ? "Documents requis" : "الوثائق المطلوبة"}
                     </h3>
-                    <div className="space-y-2.5">
+                    <div className="space-y-2">
                       {docs.map((doc, i) => (
                         <div key={i} className="flex items-start gap-2.5">
-                          <CheckCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                          <CheckCircle className="w-4 h-4 text-secondary shrink-0 mt-0.5" />
                           <span className="text-sm text-foreground leading-relaxed flex-1">{doc}</span>
                         </div>
                       ))}
@@ -304,11 +399,13 @@ export default function Services() {
                   </div>
 
                   {/* Tip */}
-                  <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-                    <span className="text-xl shrink-0">💡</span>
+                  <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30">
+                    <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-blue-600 dark:text-blue-400 text-[10px] font-bold">i</span>
+                    </div>
                     <div>
-                      <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">{language === "fr" ? "Bon à savoir" : "معلومة مفيدة"}</p>
-                      <p className="text-xs text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                      <p className="text-xs font-semibold text-blue-800 dark:text-blue-300 mb-0.5">{language === "fr" ? "Bon à savoir" : "معلومة مفيدة"}</p>
+                      <p className="text-xs text-blue-700/90 dark:text-blue-300/80 leading-relaxed">
                         {language === "fr" ? m.tip.fr : m.tip.ar}
                       </p>
                     </div>
@@ -316,25 +413,25 @@ export default function Services() {
 
                   {/* Contact support */}
                   <div>
-                    <h3 className="font-semibold text-foreground mb-3 text-base">
+                    <h3 className="font-semibold text-foreground mb-3 text-sm">
                       {language === "fr" ? "Contacter le support" : "التواصل مع الدعم"}
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <a href={`mailto:${m.supportEmail}`} className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors">
-                        <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center shrink-0">
-                          <Mail className="w-4 h-4 text-primary" />
+                      <a href={`mailto:${m.supportEmail}`} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-secondary/40 hover:bg-secondary/5 transition-colors">
+                        <div className="w-8 h-8 bg-secondary/10 rounded-lg flex items-center justify-center shrink-0">
+                          <Mail className="w-4 h-4 text-secondary" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-foreground">Email</p>
                           <p className="text-xs text-muted-foreground truncate">{m.supportEmail}</p>
                         </div>
                       </a>
-                      <a href={`tel:${m.supportPhone}`} className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors">
+                      <a href={`tel:${m.supportPhone}`} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-secondary/40 hover:bg-secondary/5 transition-colors">
                         <div className="w-8 h-8 bg-secondary/10 rounded-lg flex items-center justify-center shrink-0">
                           <Phone className="w-4 h-4 text-secondary" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium text-foreground">Téléphone</p>
+                          <p className="text-xs font-medium text-foreground">{language === "fr" ? "Téléphone" : "الهاتف"}</p>
                           <p className="text-xs text-muted-foreground">{m.supportPhone}</p>
                         </div>
                       </a>
@@ -343,15 +440,15 @@ export default function Services() {
                 </div>
 
                 {/* Sticky CTA Bottom */}
-                <div className="p-4 border-t border-border bg-background/95 backdrop-blur-sm sticky bottom-0 z-20 flex gap-3 shadow-lg">
+                <div className="p-4 border-t border-border bg-background/95 backdrop-blur-sm sticky bottom-0 z-20 flex gap-3">
                   <Button variant="outline" className="flex-1" onClick={() => setDetailService(null)}>
                     {language === "fr" ? "Fermer" : "إغلاق"}
                   </Button>
                   <Button
-                    className="flex-1 gap-2 font-medium"
+                    className="flex-1 gap-2 font-medium bg-primary hover:bg-primary/90 text-primary-foreground"
                     onClick={() => { setDetailService(null); setSelectedService(detailService); }}
                   >
-                    {language === "fr" ? "Déposer ma demande" : "تقديم الطلب"}
+                    {language === "fr" ? "Démarrer la démarche" : "بدء الإجراء"}
                     <Arrow className="w-4 h-4" />
                   </Button>
                 </div>
@@ -365,9 +462,17 @@ export default function Services() {
       <Dialog open={selectedService !== null} onOpenChange={(open) => !open && setSelectedService(null)}>
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {selectedService && <span>{meta(selectedService.id).emoji}</span>}
-              {language === "fr" ? "Déposer une demande" : "تقديم طلب"}
+            <DialogTitle className="flex items-center gap-2.5">
+              {selectedService && (() => {
+                const iconInfo = getIcon(selectedService.id);
+                const Icon = iconInfo.icon;
+                return (
+                  <div className={`w-7 h-7 rounded-md ${iconInfo.bg} flex items-center justify-center`}>
+                    <Icon className={`w-4 h-4 ${iconInfo.color}`} />
+                  </div>
+                );
+              })()}
+              {language === "fr" ? "Démarrer la démarche" : "بدء الإجراء"}
             </DialogTitle>
             <DialogDescription>
               {selectedService && (
@@ -413,9 +518,9 @@ export default function Services() {
                 <Button type="button" variant="outline" onClick={() => setSelectedService(null)}>
                   {language === "fr" ? "Annuler" : "إلغاء"}
                 </Button>
-                <Button type="submit" disabled={createCase.isPending}>
+                <Button type="submit" disabled={createCase.isPending} className="bg-primary hover:bg-primary/90 text-primary-foreground">
                   {createCase.isPending
-                    ? (language === "fr" ? "Envoi..." : "جاري الإرسال...")
+                    ? (language === "fr" ? "Envoi…" : "جاري الإرسال…")
                     : (language === "fr" ? "Envoyer" : "إرسال")}
                 </Button>
               </DialogFooter>

@@ -9,7 +9,7 @@ export const translations: Translations = {
   "app.tagline": { ar: "مساعدك الذكي للخدمات الإدارية", fr: "Votre assistant IA pour les services publics", darija: "المساعد ديالك للخدمات الإدارية" },
   "nav.home": { ar: "الرئيسية", fr: "Accueil", darija: "الرئيسية" },
   "nav.services": { ar: "الخدمات", fr: "Services", darija: "الخدمات" },
-  "nav.dashboard": { ar: "قضاياي", fr: "Mes dossiers", darija: "قضاياي" },
+  "nav.dashboard": { ar: "ملفاتي", fr: "Mes dossiers", darija: "ملفاتي" },
   "nav.chat": { ar: "المساعد الذكي", fr: "Assistant IA", darija: "المساعد الذكي" },
   "nav.admin": { ar: "الإدارة", fr: "Administration", darija: "الإدارة" },
   "nav.profile": { ar: "الملف الشخصي", fr: "Profil", darija: "الملف الشخصي" },

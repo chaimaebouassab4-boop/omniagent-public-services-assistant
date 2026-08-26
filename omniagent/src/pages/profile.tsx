@@ -27,7 +27,7 @@ function formatSize(bytes: number): string {
 }
 
 export default function Profile() {
-  const { t, language, setLanguage } = useI18n();
+  const { t, language, setLanguage, isRtl } = useI18n();
   const [_, setLocation] = useLocation();
   const { toast } = useToast();
 

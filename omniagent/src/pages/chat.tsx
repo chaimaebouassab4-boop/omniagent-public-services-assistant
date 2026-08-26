@@ -14,7 +14,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus, History, BookOpen, ShieldCheck, Trash2 } from "lucide-react";
+import {
+  Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus,
+  History, BookOpen, ShieldCheck, Trash2, Compass, FileCheck2, FolderClock,
+  Sparkles, ArrowUpRight,
+} from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -171,8 +175,25 @@ export default function Chat() {
   };
 
   const prompts = language === "fr" 
-    ? ["Comment renouveler ma carte d'identité ?", "Quels documents pour un certificat de résidence ?", "Où trouver une licence commerciale ?"] 
-    : ["كيفاش نجدد بطاقة التعريف؟", "شنو هي الوثائق اللي خصني نجيب لشهادة السكنى؟", "بغيت نسول على رخصة تجارية"];
+    ? [
+        "Comment renouveler ma carte d'identité (CIN) ?",
+        "Quels documents pour un certificat de résidence ?",
+        "Quel est le délai final pour déclarer le décès ?",
+        "Combien coûte l'extrait de casier judiciaire ?",
+      ] 
+    : language === "ar"
+    ? [
+        "كيف أجدد بطاقة التعريف الوطنية؟",
+        "ما هي وثائق شهادة السكنى؟",
+        "كم الأجل للتصريح بالوفاة؟",
+        "كم رسوم السجل العدلي؟",
+      ]
+    : [
+        "كيفاش نجدد لاكارط ناسيونال (CIN)؟",
+        "شنو الوثائق باش نخرج شهادة السكنى؟",
+        "شنو هي المدة القانونية باش نيلغ على الوفاة؟",
+        "شحال ديال الوقت باش يخرج السجل العدلي؟",
+      ];
 
   return (
     <AppLayout>
@@ -255,9 +276,89 @@ export default function Chat() {
             <ScrollArea className="flex-1 p-6" viewportRef={scrollRef}>
               <div className="space-y-6">
                 {!displayMessages.length && !sendChatMessage.isPending && (
-                  <div className="text-center text-muted-foreground mt-20">
-                    <Bot className="w-12 h-12 mx-auto mb-4 text-primary opacity-50" />
-                    <p>{language === "fr" ? "Bonjour! Comment puis-je vous aider aujourd'hui?" : "مرحباً! كيفاش نقدر نعاونك اليوم؟"}</p>
+                  <div className="max-w-2xl mx-auto py-6 sm:py-10 px-2 text-center my-auto">
+                    {/* Assistant Avatar Badge */}
+                    <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center mx-auto mb-4 shadow-xs">
+                      <Bot className="w-7 h-7" />
+                    </div>
+
+                    {/* Structured Welcome Title */}
+                    <h2 className="text-lg sm:text-xl font-bold text-foreground mb-2.5 leading-snug">
+                      {language === "fr"
+                        ? "Bonjour, je suis l'assistant administratif OmniAgent."
+                        : language === "ar"
+                        ? "مرحباً، أنا المساعد الإداري أومني إيجنت (OmniAgent)."
+                        : "السلام عليكم، أنا المساعد الإداري OmniAgent."}
+                    </h2>
+
+                    {/* Structured Description */}
+                    <p className="text-sm text-muted-foreground leading-relaxed max-w-lg mx-auto mb-7">
+                      {language === "fr"
+                        ? "Je peux vous orienter dans vos démarches, vérifier la conformité de vos pièces jointes ou suivre l'état d'avancement de vos dossiers."
+                        : language === "ar"
+                        ? "يمكنني إرشادك في إجراءاتك الإدارية، التحقق من مطابقة وثائقك المرفقة، أو تتبع حالة تقدم ملفاتك."
+                        : "نقدر نعاونك ونوجهك في جميع الإجراءات الإدارية، نتحقق من الوثائق ديالك، ولا نتبعو حالة الملفات ديالك."}
+                    </p>
+
+                    {/* 3 Structured Capabilities */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-7 text-start" dir={isRtl ? "rtl" : "ltr"}>
+                      <div className="p-3.5 rounded-xl border border-border bg-card/60 hover:bg-card hover:border-primary/30 transition-all">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-2.5">
+                          <Compass className="w-4 h-4" />
+                        </div>
+                        <h3 className="text-xs font-semibold text-foreground mb-1">
+                          {language === "fr" ? "Orientation démarches" : "توجيه الإجراءات"}
+                        </h3>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          {language === "fr" ? "Guide étape par étape pour vos formalités (CIN, actes...)" : "دليل مفصل للمساطر الإدارية والوثائق"}
+                        </p>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl border border-border bg-card/60 hover:bg-card hover:border-primary/30 transition-all">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2.5">
+                          <FileCheck2 className="w-4 h-4" />
+                        </div>
+                        <h3 className="text-xs font-semibold text-foreground mb-1">
+                          {language === "fr" ? "Conformité des pièces" : "التحقق من الوثائق"}
+                        </h3>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          {language === "fr" ? "Vérification des pièces requises et formats" : "فحص مطابقة الملفات والصيغ المطلوبة"}
+                        </p>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl border border-border bg-card/60 hover:bg-card hover:border-primary/30 transition-all">
+                        <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-2.5">
+                          <FolderClock className="w-4 h-4" />
+                        </div>
+                        <h3 className="text-xs font-semibold text-foreground mb-1">
+                          {language === "fr" ? "Suivi des dossiers" : "تتبع الملفات"}
+                        </h3>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          {language === "fr" ? "Statuts, délais estimés et étapes en cours" : "متابعة تقدم الطلبات والآجال المتبقية"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Suggestions Section on Welcome Screen */}
+                    <div className="space-y-2.5 text-start" dir={isRtl ? "rtl" : "ltr"}>
+                      <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 px-1">
+                        <Sparkles className="w-3.5 h-3.5 text-primary" />
+                        <span>{language === "fr" ? "Exemples de questions fréquentes :" : "أمثلة على الأسئلة الشائعة:"}</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {prompts.map((p, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setMessageInput(p)}
+                            className="group flex items-center justify-between p-3 rounded-xl border border-border bg-card hover:border-primary/40 hover:bg-primary/5 transition-all text-xs text-foreground font-medium text-start"
+                          >
+                            <span className="truncate flex-1">{p}</span>
+                            <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0 ml-2" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 )}
                 {displayMessages.map((msg) => (
@@ -309,22 +410,28 @@ export default function Chat() {
               </div>
             </ScrollArea>
             
-            <div className="p-6 border-t bg-card shrink-0">
-              <div className="mb-4">
-                <div className="text-xs font-medium text-muted-foreground mb-2">{t("chat.suggested")}</div>
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                  {prompts.map((p, i) => (
-                    <button 
-                      key={i} 
-                      onClick={() => setMessageInput(p)}
-                      className="whitespace-nowrap px-4 py-2 bg-muted hover:bg-muted/80 text-sm rounded-full border transition-colors"
-                    >
-                      {p}
-                    </button>
-                  ))}
+            <div className="p-4 sm:p-5 border-t bg-card shrink-0">
+              {Boolean(displayMessages.length) && (
+                <div className="mb-3">
+                  <div className="text-[11px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-primary" />
+                    <span>{t("chat.suggested")}</span>
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+                    {prompts.map((p, i) => (
+                      <button 
+                        key={i} 
+                        type="button"
+                        onClick={() => setMessageInput(p)}
+                        className="whitespace-nowrap px-3 py-1 bg-muted/60 hover:bg-muted hover:border-primary/40 text-xs rounded-full border transition-colors text-muted-foreground hover:text-foreground"
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <form onSubmit={handleSendMessage} className="flex gap-3">
+              )}
+              <form onSubmit={handleSendMessage} className="flex gap-2.5">
                 <input
                   ref={fileInputRef}
                   type="file"

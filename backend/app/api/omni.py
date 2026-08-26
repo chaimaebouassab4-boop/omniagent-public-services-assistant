@@ -556,14 +556,14 @@ def _recent_chat_history(query, max_exchanges: int = 5) -> list[dict[str, str]]:
 
 
 def detect_service_id(message: str) -> str | None:
-    """Best-effort service detection from keywords for standalone chat.
-
-    Returns the canonical service id string when a keyword matches, or
-    ``None`` when no keyword is found so the caller can fall back to a
-    global RAG search across *all* services instead of defaulting to a
-    single hardcoded service (which caused wrong answers for questions
-    like "هل يمكن تعدد الزوجات" or "كيفاش نجدد بطاقة التعريف").
-    """
+    """Best-effort service detection using the unified 50+ keyword dictionary."""
+    try:
+        from app.rag_service import _detect_service_from_query
+        detected = _detect_service_from_query(message)
+        if detected:
+            return detected
+    except Exception:
+        pass
     lowered = message.lower()
     keyword_map = {
         # ----- civil status -----

@@ -171,15 +171,44 @@ def _answer_marriage_fallback(user_message: str, knowledge: dict[str, Any]) -> s
 
 
 def _structured_fallback(user_message: str, knowledge: dict[str, Any]) -> str | None:
-    """Answer from structured KB fields (fees, documents, description)."""
+    """Answer from structured KB fields (fees, documents, deadlines, description)."""
     lowered_message = user_message.lower()
 
+    # ── Deadlines / Processing Time / Validity ──
+    if any(
+        term in lowered_message
+        for term in [
+            "أجل", "مدة", "وقت", "شحال ديال الوقت", "شحال كياخد", "باش نيلغ", "باش نبلغ",
+            "délai", "delai", "temps", "combien de temps", "durée", "duree",
+            "صلاحية", "valabilité", "validité", "validite",
+        ]
+    ):
+        # Check FAQ for matching questions first
+        for entry in knowledge.get("faq", []):
+            q_text = str(entry.get("question", "")).lower()
+            if any(term in q_text for term in ["أجل", "مدة", "وقت", "صلاحية", "délai", "delai"]):
+                ans = str(entry.get("answer", "")).strip()
+                if ans:
+                    return ans
+        # Check validity_period
+        validity = knowledge.get("validity_period")
+        if isinstance(validity, str) and validity:
+            return validity
+        # Check general_steps for timing notes
+        steps = knowledge.get("general_steps")
+        if isinstance(steps, list):
+            for s in steps:
+                if any(k in str(s) for k in ["يوماً", "أيام", "ساعة", "شهر", "30"]):
+                    return str(s)
+
+    # ── Fees ──
     fees = knowledge.get("fees")
     if isinstance(fees, str) and any(
         term in lowered_message for term in ["رسوم", "ثمن", "شحال كتكلف", "واجبات", "prix", "fee", "fees", "cost"]
     ):
         return fees
 
+    # ── Required Documents ──
     if any(term in lowered_message for term in ["وثائق", "الوثائق", "مدارك", "watha2iq", "documents", "وراق", "اوراق", "ورقة"]):
         required = knowledge.get("required_documents")
         if isinstance(required, dict):
@@ -191,6 +220,15 @@ def _structured_fallback(user_message: str, knowledge: dict[str, Any]) -> str | 
         if isinstance(required, list) and required:
             docs_preview = "\n".join(f"- {doc}" for doc in required[:4])
             return f"Hadi awel watha2iq lli khassek ghaliban:\n{docs_preview}"
+
+    # ── FAQ Partial / Substring Match ──
+    for entry in knowledge.get("faq", []):
+        q_text = str(entry.get("question", "")).lower()
+        for kw in ["وفاة", "مات", "décès", "deces", "عدلي", "casier", "ازدياد", "naissance", "سكنى", "résidence"]:
+            if kw in lowered_message and kw in q_text:
+                ans = str(entry.get("answer", "")).strip()
+                if ans and len(ans) > 5:
+                    return ans
 
     description = knowledge.get("description_ar") or knowledge.get("description") or ""
     if description:

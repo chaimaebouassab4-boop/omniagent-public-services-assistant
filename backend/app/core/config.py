@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     openai_model: str = Field(default="gpt-4o-mini", description="OpenAI model name")
 
     google_api_key: str = Field(default="", description="Google Gemini API key for RAG LLM")
-    gemini_model: str = Field(default="gemini-2.0-flash", description="Gemini model name")
+    gemini_model: str = Field(default="gemini-3.6-flash", description="Gemini model name")
 
 
 settings = Settings()
