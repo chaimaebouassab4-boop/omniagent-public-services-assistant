@@ -5,7 +5,6 @@ camelCase fields and numeric ids. This router serves that exact contract on the
 `/api/*` paths the frontend calls, backed by the existing SQLAlchemy models and
 the knowledge-base answer engine.
 """
-import io
 import re
 import uuid
 from datetime import datetime, timedelta
@@ -784,40 +783,10 @@ async def send_chat_message(
     return serialize_message(assistant_msg, _standalone_count(db, current_user.id, session_id))
 
 
-def _extract_pdf_text(data: bytes) -> tuple[str, int]:
-    """Best-effort PDF text extraction; returns (text, page_count)."""
-    try:
-        from pypdf import PdfReader
-    except ImportError:
-        return "", 0
-    try:
-        reader = PdfReader(io.BytesIO(data))
-        text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
-        return text, len(reader.pages)
-    except Exception:
-        return "", 0
-
-
-def _document_ack_message(name: str, text: str, pages: int, language: str) -> str:
-    if language == "fr":
-        if text:
-            return (
-                f"Document « {name} » bien reçu ({pages} page(s), {len(text)} caractères extraits). "
-                "Vous pouvez maintenant me poser vos questions à propos de ce document."
-            )
-        return (
-            f"Document « {name} » bien reçu. Aucun texte n'a pu être extrait automatiquement — "
-            "décrivez-moi son contenu ou posez directement votre question."
-        )
-    if text:
-        return (
-            f"توصلت بالوثيقة « {name} » ({pages} صفحة، {len(text)} حرف مستخرج). "
-            "دابا تقدر تسولني على هاد الوثيقة."
-        )
-    return (
-        f"توصلت بالوثيقة « {name} ». ما قدرتش نستخرج النص منها أوتوماتيكياً — "
-        "وصف ليا المحتوى ديالها ولا سول سؤالك مباشرة."
-    )
+from app.services.document_analyzer import (  # noqa: E402
+    analyze_document,
+    format_analysis_chat_message,
+)
 
 
 @router.post("/chat/documents", status_code=status.HTTP_201_CREATED)
@@ -828,7 +797,17 @@ async def upload_chat_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Upload a document into the standalone chat; extracts PDF text as context."""
+    """Upload a document into the standalone chat.
+
+    Pipeline:
+    1. Validate MIME type and size.
+    2. Save file to disk.
+    3. Extract text (pypdf fast path for selectable PDFs).
+    4. OCR fallback via Gemini Vision for scanned PDFs and images.
+    5. LLM analysis: doc type, entities, validity, conformity verdict.
+    6. Store extracted text as a hidden context row for follow-up RAG queries.
+    7. Return formatted analysis as the assistant's reply.
+    """
     content_type = (file.content_type or "").lower()
     if content_type not in ALLOWED_UPLOAD_MIME_TYPES:
         raise HTTPException(
@@ -850,14 +829,20 @@ async def upload_chat_document(
     upload_dir.mkdir(parents=True, exist_ok=True)
     (upload_dir / f"{uuid.uuid4().hex}_{safe_name}").write_bytes(file_bytes)
 
-    extracted_text, page_count = ("", 0)
-    if content_type == "application/pdf":
-        extracted_text, page_count = _extract_pdf_text(file_bytes)
-
     lang = language if language in MESSAGE_LANGUAGES else "darija"
     session_id = sessionId or uuid.uuid4().hex
 
-    # Visible user message rendered as an attachment in the thread.
+    # ── Run Smart Document Analysis (OCR + LLM) ───────────────────────────────
+    analysis = analyze_document(
+        file_bytes=file_bytes,
+        content_type=content_type,
+        filename=safe_name,
+        language=lang,
+        google_api_key=settings.google_api_key,
+        gemini_model_name=settings.gemini_model,
+    )
+
+    # ── Visible user message (attachment bubble in thread) ────────────────────
     db.add(
         ChatMessage(
             case_id=None,
@@ -868,24 +853,27 @@ async def upload_chat_document(
             language=lang,
         )
     )
-    # Hidden context row (excluded from listings) kept for future RAG use.
-    if extracted_text:
+
+    # ── Hidden context row — stores extracted OCR text for follow-up RAG use ──
+    if analysis.extracted_text:
         db.add(
             ChatMessage(
                 case_id=None,
                 user_id=current_user.id,
                 session_id=session_id,
                 sender="document_context",
-                message=extracted_text[:20000],
+                message=analysis.extracted_text[:20000],
                 language=lang,
             )
         )
+
+    # ── Assistant reply with full structured analysis ─────────────────────────
     assistant_msg = ChatMessage(
         case_id=None,
         user_id=current_user.id,
         session_id=session_id,
         sender="assistant",
-        message=_document_ack_message(safe_name, extracted_text, page_count, lang),
+        message=format_analysis_chat_message(analysis, safe_name, lang),
         language=lang,
     )
     db.add(assistant_msg)
