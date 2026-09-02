@@ -30,95 +30,88 @@ from typing import Optional
 _DOCUMENT_PROMPTS: dict[str, dict[str, str]] = {
     "darija": {
         "system": (
-            "أنت محلل وثائق إداري متخصص في الوثائق الرسمية المغربية. "
-            "مهمتك هي تحليل الوثيقة وإعطاء معلومات واضحة ومفيدة للمواطن باللغة الدارجة المغربية."
+            "أنت OmniAgent، المساعد الذكي الرسمي للإجراءات والخدمات الإدارية المغربية. "
+            "الأسلوب ديالك واضح، ودود، مهني، ومبسط بالدارجة المغربية المفهومة. "
+            "جاوب المواطن بطريقة حوارية ومباشرة بلا تعقيد أو إطالة غير مفيدة."
         ),
         "analyze": (
-            "حلل هاد الوثيقة وعطيني:\n"
-            "1. **نوع الوثيقة**: شنو هاد الوثيقة بالضبط؟\n"
-            "2. **المعلومات المستخرجة**: الاسم، التاريخ، العنوان، رقم البطاقة الوطنية، الرقم الضريبي... إلخ\n"
-            "3. **صلاحية الوثيقة**: واش لا تزال صالحة؟ (الوثائق الإدارية خاص ما يتجاوزش 3 أشهر)\n"
-            "4. **الخاتم والتوقيع**: واش عندها ختم رسمي وتوقيع؟\n"
-            "5. **اللغة**: بأي لغة محررة؟ (العربية / الفرنسية / ثنائية اللغة)\n"
-            "6. **الصلاحية للإجراءات الإدارية**: واش تصلح هاد الوثيقة للإجراءات الإدارية المغربية؟ "
-            "وشنو ممكن يكون ناقص؟\n\n"
-            "جاوب بالدارجة المغربية بطريقة واضحة ومنظمة.\n\n"
+            "حلل هاد الوثيقة الإدارية بطريقة محادثة واضحة ومختصرة للمواطن بالدارجة المغربية.\n\n"
+            "{user_query_instruction}"
+            "الهيكل المطلوب (مختصر ومباشر) :\n"
+            "1. **خلاصة مباشرة** : قول للمواطن شنو هي هاد الوثيقة، باسم شكون، وواش مقبولة وصالحة للإجراءات الإدارية في المغرب.\n"
+            "2. **أهم النقط المستخرجة (في 3 إلى 4 نقط فقط)** :\n"
+            "   * **صاحب(ة) الوثيقة** : [الاسم الكامل]\n"
+            "   * **رقم التعريف / المرجع** : [رقم CIN أو CNE أو المرجع إن وجد]\n"
+            "   * **تاريخ والجهة المصدرة** : [التاريخ والمؤسسة]\n"
+            "   * **الصلاحية والخاتم** : [واش صالحة للإدارة المغربية، واش خاصها ترجمة أو تصحيح إمضاء]\n"
+            "3. **توجيه عملي** : جملة أو جوج باش توجه المواطن للخطوة الموالية.\n\n"
             "محتوى الوثيقة:\n{text}"
         ),
         "no_text": (
             "⚠️ **ما قدرتش نقرا الوثيقة بوضوح**\n\n"
-            "الوثيقة ديالك وصلت، ولكن ما قدرتش نستخرج النص منها. "
-            "ممكن تكون:\n"
-            "- الصورة غير واضحة أو ماشي بزاف الضوء\n"
-            "- الوثيقة مشفرة أو محمية\n\n"
-            "جرب تعاود ترفع صورة أوضح، أو وصف ليا محتوى الوثيقة ونعاونك."
+            "وصلاتني الوثيقة ديالك، ولكن الصورة أو الملف ما كانش واضح كفاية باش نستخرج النص.\n\n"
+            "جرب تعاود ترفع صورة أوضح، أو كتب ليا شنو فيها ونعاونك بكل سرور."
         ),
         "error": (
             "❌ **وقع مشكل في التحليل**\n\n"
-            "ما قدرتش نحلل الوثيقة دابا. "
-            "تقدر تسولني مباشرة على ما تحتاجو."
+            "تعذر تحليل الوثيقة حالياً. تقدر تسولني مباشرة على أي إجراء باغي تديرو."
         ),
     },
     "fr": {
         "system": (
-            "Vous êtes un expert en analyse de documents administratifs marocains. "
-            "Votre rôle est d'analyser le document soumis et de fournir une réponse claire et utile au citoyen en français."
+            "Vous êtes OmniAgent, l'assistant officiel pour les démarches administratives marocaines. "
+            "Votre ton est naturel, professionnel, bienveillant et synthétique. "
+            "Vous vous adressez directement au citoyen dans un style fluide et conversationnel, sans lourdeur administrative ni jargon inutile."
         ),
         "analyze": (
-            "Analysez ce document et indiquez-moi :\n"
-            "1. **Type de document** : De quel document s'agit-il précisément ?\n"
-            "2. **Informations extraites** : Nom, date, adresse, numéro CIN, numéro fiscal… etc.\n"
-            "3. **Validité du document** : Est-il encore valide ? (Les documents administratifs ne doivent pas dépasser 3 mois)\n"
-            "4. **Cachet et signature** : Y a-t-il un cachet officiel et une signature ?\n"
-            "5. **Langue** : En quelle(s) langue(s) est-il rédigé ? (Arabe / Français / Bilingue)\n"
-            "6. **Conformité administrative** : Ce document est-il valide pour les démarches administratives marocaines ? "
-            "Qu'est-ce qui pourrait manquer ?\n\n"
-            "Répondez en français de manière claire et structurée.\n\n"
+            "Analysez ce document de manière concise et conversationnelle en vous adressant directement à l'utilisateur.\n\n"
+            "{user_query_instruction}"
+            "Structure attendue (courte, claire et aérée) :\n"
+            "1. **Synthèse directe** : Indiquez en une phrase de quel document il s'agit, au nom de qui, et s'il est conforme / utilisable pour les démarches au Maroc.\n"
+            "2. **L'essentiel en quelques points clés** :\n"
+            "   * **Titulaire** : [Nom & Prénom]\n"
+            "   * **Identifiant** : [N° CIN, CNE ou référence]\n"
+            "   * **Émetteur & Date** : [Organisme émetteur et date]\n"
+            "   * **Validité & Statut** : [Conformité, règle des 3 mois, besoin éventuel de traduction assermentée ou légalisation]\n"
+            "3. **Conseil pratique** : 1 ou 2 phrases concrètes pour orienter le citoyen sur la suite de sa démarche.\n\n"
             "Contenu du document :\n{text}"
         ),
         "no_text": (
             "⚠️ **Impossible de lire le document clairement**\n\n"
-            "Votre document a bien été reçu, mais le texte n'a pas pu être extrait. "
-            "Cela peut être dû à :\n"
-            "- Une image floue ou mal éclairée\n"
-            "- Un document chiffré ou protégé\n\n"
-            "Essayez de renvoyer une image plus nette, ou décrivez-moi le contenu du document."
+            "Le document a bien été reçu, mais la lisibilité est insuffisante pour extraire les informations avec certitude.\n\n"
+            "Essayez d'envoyer une photo plus nette ou un scan plus clair, ou décrivez-moi votre démarche pour que je puisse vous guider."
         ),
         "error": (
             "❌ **Erreur d'analyse**\n\n"
-            "L'analyse du document a échoué. "
-            "Vous pouvez me poser directement vos questions."
+            "L'analyse du document n'a pas pu aboutir. Vous pouvez me poser directement votre question."
         ),
     },
     "arabic": {
         "system": (
-            "أنت محلل وثائق إداري متخصص في الوثائق الرسمية المغربية. "
-            "مهمتك تحليل الوثيقة وتقديم معلومات واضحة ومفيدة للمواطن باللغة العربية الفصحى."
+            "أنت OmniAgent، المساعد الذكي الرسمي للمساطر والخدمات الإدارية المغربية. "
+            "أسلوبك مهني، واضح، ودود ومختصر، يخاطب المواطن بلغة عربية سلسة ومباشرة دون تعقيد أو إطالة."
         ),
         "analyze": (
-            "يرجى تحليل هذه الوثيقة وتزويدي بما يلي:\n"
-            "1. **نوع الوثيقة**: ما هذه الوثيقة بالتحديد؟\n"
-            "2. **المعلومات المستخرجة**: الاسم، التاريخ، العنوان، رقم بطاقة التعريف الوطنية، الرقم الضريبي...\n"
-            "3. **صلاحية الوثيقة**: هل لا تزال سارية المفعول؟ (يجب ألا تتجاوز الوثائق الإدارية 3 أشهر)\n"
-            "4. **الختم والتوقيع**: هل تحمل ختماً رسمياً وتوقيعاً؟\n"
-            "5. **اللغة**: بأي لغة محررة؟ (العربية / الفرنسية / ثنائية اللغة)\n"
-            "6. **الصلاحية للإجراءات الإدارية**: هل تصلح هذه الوثيقة للإجراءات الإدارية المغربية؟ "
-            "وما الذي قد يكون مفقوداً؟\n\n"
-            "أجب باللغة العربية الفصحى بأسلوب واضح ومنظم.\n\n"
+            "يرجى تقديم ملخص موجز ومباشر لهذه الوثيقة بأسلوب حواري وواضح:\n\n"
+            "{user_query_instruction}"
+            "الهيكل المطلوب (موجز ومفيد):\n"
+            "1. **موجز مباشر**: حدد نوع الوثيقة، صاحبها، ومدى مطابقتها للمساطر الإدارية بالمغرب.\n"
+            "2. **البيانات الأساسية**:\n"
+            "   * **المعني(ة) بالأمر**: [الاسم والنسب]\n"
+            "   * **رقم الهوية / المرجع**: [رقم CIN أو المرجع]\n"
+            "   * **تاريخ والجهة المصدرة**: [تاريخ ومصدر الوثيقة]\n"
+            "   * **الصلاحية**: [سارية المفعول، تحتاج مصادقة، مترجمة، إلخ]\n"
+            "3. **توجيه عملي**: إرشاد مباشر وموجز للمواطن حول الخطوة التالية.\n\n"
             "محتوى الوثيقة:\n{text}"
         ),
         "no_text": (
             "⚠️ **تعذر قراءة الوثيقة بوضوح**\n\n"
-            "تم استلام وثيقتك، غير أنه تعذر استخراج النص منها. "
-            "قد يكون ذلك بسبب:\n"
-            "- صورة غير واضحة أو سيئة الإضاءة\n"
-            "- وثيقة مشفرة أو محمية\n\n"
-            "يُرجى إعادة إرسال صورة أوضح، أو وصف محتوى الوثيقة وسأساعدك."
+            "تم استلام الوثيقة، لكن جودة الصورة أو الملف غير كافية لاستخراج النص بدقة.\n\n"
+            "يرجى إعادة إرسال صورة أوضح، أو إخباري بمحتوى الوثيقة وسأساعدك فوراً."
         ),
         "error": (
             "❌ **حدث خطأ في التحليل**\n\n"
-            "تعذر تحليل الوثيقة في الوقت الحالي. "
-            "يمكنك طرح أسئلتك مباشرةً."
+            "تعذر تحليل الوثيقة حالياً. يمكنك طرح سؤالك مباشرة وسأجيبك."
         ),
     },
 }
@@ -200,31 +193,65 @@ def _ocr_with_gemini(image_bytes: bytes, mime: str, api_key: str, model: str) ->
 
 # ─── Step 3: LLM Document Analysis ───────────────────────────────────────────
 
-def _analyze_with_gemini_sdk(text: str, lang: str, api_key: str, model: str) -> str:
+def _analyze_with_gemini_sdk(
+    text: str,
+    lang: str,
+    api_key: str,
+    model: str,
+    user_query: str = "",
+) -> str:
     """Use direct Gemini SDK for rich document analysis with system instructions."""
     prompts = _DOCUMENT_PROMPTS[lang]
+    user_query_instruction = ""
+    if user_query and user_query.strip():
+        if lang == "fr":
+            user_query_instruction = f"👉 **Question / Message du citoyen** : \"{user_query.strip()}\"\nRépondez explicitement et en priorité à cette question dans votre analyse.\n\n"
+        elif lang == "arabic":
+            user_query_instruction = f"👉 **سؤال / رسالة المواطن** : \"{user_query.strip()}\"\nيرجى الإجابة بدقة وبشكل رئيسي على هذا السؤال في تحليلك.\n\n"
+        else:
+            user_query_instruction = f"👉 **سؤال / رسالة المواطن** : \"{user_query.strip()}\"\nجاوب على هاد السؤال بالخصوص في التحليل ديالك.\n\n"
+
     try:
         import google.generativeai as genai  # type: ignore
 
         genai.configure(api_key=api_key)
         m = genai.GenerativeModel(model, system_instruction=prompts["system"])
-        response = m.generate_content(prompts["analyze"].format(text=text[:6000]))
+        prompt_text = prompts["analyze"].format(
+            text=text[:6000],
+            user_query_instruction=user_query_instruction,
+        )
+        response = m.generate_content(prompt_text)
         return (response.text or "").strip()
     except Exception as exc:
         print(f"[WARN] Gemini analysis failed: {exc}")
         return ""
 
 
-def _analyze_with_llamaindex_llm(text: str, lang: str) -> str:
+def _analyze_with_llamaindex_llm(
+    text: str,
+    lang: str,
+    user_query: str = "",
+) -> str:
     """Fallback: use the LlamaIndex global LLM (Ollama / OpenAI / Gemini via LI)."""
     prompts = _DOCUMENT_PROMPTS[lang]
+    user_query_instruction = ""
+    if user_query and user_query.strip():
+        if lang == "fr":
+            user_query_instruction = f"👉 **Question du citoyen** : \"{user_query.strip()}\"\nRépondez à cette question.\n\n"
+        else:
+            user_query_instruction = f"👉 **سؤال المواطن** : \"{user_query.strip()}\"\n\n"
+
     try:
         from llama_index.core import Settings as LISettings  # type: ignore
 
         llm = LISettings.llm
         if llm is None:
             return ""
-        full_prompt = prompts["system"] + "\n\n" + prompts["analyze"].format(text=text[:4000])
+        prompt_text = prompts["analyze"].format(
+            text=text[:4000],
+            user_query_instruction=user_query_instruction,
+        )
+        full_prompt = prompts["system"] + "\n\n" + prompt_text
         response = llm.complete(full_prompt)
         return (str(response) or "").strip()
     except Exception as exc:
@@ -241,6 +268,7 @@ def analyze_document(
     language: str = "darija",
     google_api_key: str = "",
     gemini_model_name: str = "gemini-1.5-flash",
+    user_query: str = "",
 ) -> DocumentAnalysis:
     """Run the full OCR → LLM analysis pipeline on an uploaded document.
 
@@ -251,6 +279,7 @@ def analyze_document(
         language:          Chat language key ('darija', 'fr', 'arabic').
         google_api_key:    Google Gemini API key; if empty, Vision OCR is skipped.
         gemini_model_name: Gemini model to use for both OCR and analysis.
+        user_query:        Optional accompanying text message / question from user.
 
     Returns:
         DocumentAnalysis dataclass with all pipeline results.
@@ -295,9 +324,13 @@ def analyze_document(
     # ── 2. LLM Analysis ───────────────────────────────────────────────────────
     if len(extracted_text.strip()) >= 30:
         if google_api_key:
-            result.llm_analysis = _analyze_with_gemini_sdk(extracted_text, lang, google_api_key, gemini_model_name)
+            result.llm_analysis = _analyze_with_gemini_sdk(
+                extracted_text, lang, google_api_key, gemini_model_name, user_query=user_query
+            )
         if not result.llm_analysis:
-            result.llm_analysis = _analyze_with_llamaindex_llm(extracted_text, lang)
+            result.llm_analysis = _analyze_with_llamaindex_llm(
+                extracted_text, lang, user_query=user_query
+            )
 
     return result
 
@@ -313,11 +346,15 @@ def format_analysis_chat_message(
     lang = _resolve_lang(language)
     prompts = _DOCUMENT_PROMPTS[lang]
 
+    # Clean, concise header
+    page_info = f"PDF · {analysis.page_count} page(s)" if not analysis.is_image else "Image"
+    header = f"📄 **{filename}** *({page_info})*\n\n"
+
     if analysis.error:
-        return prompts["error"]
+        return header + prompts["error"]
 
     if not analysis.llm_analysis:
-        return prompts["no_text"]
+        return header + prompts["no_text"]
 
     # OCR badge
     ocr_badge = ""
@@ -329,31 +366,10 @@ def format_analysis_chat_message(
         }
         ocr_badge = ocr_badge_map.get(lang, "")
 
-    # Header
-    page_info = f"PDF · {analysis.page_count} صفحة" if not analysis.is_image else "صورة"
-    if lang == "fr":
-        page_info = f"PDF · {analysis.page_count} page(s)" if not analysis.is_image else "Image"
-        header = f"📄 **Analyse — {filename}** *({page_info})*\n\n"
-    elif lang == "arabic":
-        header = f"📄 **تحليل الوثيقة — {filename}** *({page_info})*\n\n"
-    else:
-        header = f"📄 **تحليل الوثيقة — {filename}** *({page_info})*\n\n"
-
-    # Footer call-to-action
     footer_map = {
-        "fr": (
-            "\n\n---\n"
-            "💬 *Des questions sur ce document ou sur une démarche administrative marocaine ? "
-            "Je suis là pour vous aider !*"
-        ),
-        "arabic": (
-            "\n\n---\n"
-            "💬 *هل لديك أسئلة أخرى حول هذه الوثيقة أو حول إجراء إداري؟ أنا هنا لمساعدتك!*"
-        ),
-        "darija": (
-            "\n\n---\n"
-            "💬 *عندك أسئلة أخرى على هاد الوثيقة أو على إجراء إداري؟ سول بلا حشوما، أنا هنا!*"
-        ),
+        "fr": "\n\n💬 *N'hésitez pas si vous avez d'autres questions sur ce document ou sur vos démarches !*",
+        "arabic": "\n\n💬 *لا تتردد في طرح أي سؤال إضافي حول هذه الوثيقة أو إجراءاتك الإدارية!*",
+        "darija": "\n\n💬 *سولني في أي وقت إلا عندك أي سؤال على هاد الوثيقة أو الإجراءات ديالك!*",
     }
     footer = footer_map.get(lang, "")
 

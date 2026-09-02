@@ -22,6 +22,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { uploadDocument, validateFile, fetchCaseDocPreview, deleteCaseDocument } from "@/lib/documents";
+import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import {
   Dialog,
   DialogContent,
@@ -223,7 +224,11 @@ export default function CaseDetail() {
                         {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                       </div>
                       <div className={`p-3 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-secondary text-white rounded-tr-none' : 'bg-muted rounded-tl-none'}`}>
-                        {msg.content}
+                        <ChatMessageContent
+                          content={msg.content}
+                          role={msg.role as "user" | "assistant"}
+                          isRtl={isRtl}
+                        />
                       </div>
                     </div>
                   ))}

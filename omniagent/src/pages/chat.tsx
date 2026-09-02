@@ -17,7 +17,7 @@ import {
 import {
   Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus,
   History, BookOpen, ShieldCheck, Trash2, Compass, FileCheck2, FolderClock,
-  Sparkles, ArrowUpRight,
+  Sparkles, ArrowUpRight, X, Image as ImageIcon,
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,8 +25,14 @@ import { useToast } from "@/hooks/use-toast";
 import { uploadChatDocument, validateFile } from "@/lib/documents";
 import { listChatSessions, listSessionMessages, sendSessionMessage, deleteChatSession } from "@/lib/chat";
 import type { ChatMessage } from "@/lib/chat";
+import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 
 const DOCUMENT_PREFIX = "[Document] ";
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 export default function Chat() {
   const { t, language, isRtl } = useI18n();
@@ -35,6 +41,7 @@ export default function Chat() {
 
   const [activeSessionId, setActiveSessionId] = useState("");
   const [messageInput, setMessageInput] = useState("");
+  const [stagedFile, setStagedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   /** Optimistic messages shown while waiting for RAG response */
@@ -98,6 +105,7 @@ export default function Chat() {
   const handleNewConversation = useCallback(() => {
     setActiveSessionId(crypto.randomUUID());
     setMessageInput("");
+    setStagedFile(null);
     setPendingUserMsg(null);
   }, []);
 
@@ -113,7 +121,7 @@ export default function Chat() {
     }
   }, [displayMessages, sendChatMessage.isPending, isUploading]);
 
-  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
@@ -131,34 +139,59 @@ export default function Chat() {
       return;
     }
 
-    setIsUploading(true);
-    try {
-      await uploadChatDocument(file, language, activeSessionId);
-      queryClient.invalidateQueries({ queryKey: ["chat-messages", activeSessionId] });
-      queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
-    } catch (err) {
-      toast({
-        variant: "destructive",
-        title: language === "fr" ? "Échec de l'envoi" : "فشل الإرسال",
-        description: err instanceof Error ? err.message : undefined,
-      });
-    } finally {
-      setIsUploading(false);
-    }
+    // Stage file for preview / attachment instead of immediate auto-upload
+    setStagedFile(file);
   };
 
-  const handleSendMessage = (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const trimmed = messageInput.trim();
-    if (!trimmed) return;
+    const fileToSend = stagedFile;
 
-    // Clear input immediately for snappy UX
+    if (!trimmed && !fileToSend) return;
+    if (sendChatMessage.isPending || isUploading) return;
+
+    // Reset inputs immediately for snappy UX
     setMessageInput("");
+    setStagedFile(null);
 
+    // Case 1: An attachment is present (with or without accompanying text)
+    if (fileToSend) {
+      setIsUploading(true);
+      const userDisplayMsg = trimmed
+        ? `${DOCUMENT_PREFIX}${fileToSend.name}\n\n${trimmed}`
+        : `${DOCUMENT_PREFIX}${fileToSend.name}`;
+
+      setPendingUserMsg({
+        id: `pending-${Date.now()}`,
+        role: "user",
+        content: userDisplayMsg,
+        createdAt: new Date().toISOString(),
+      });
+
+      try {
+        await uploadChatDocument(fileToSend, language, activeSessionId, trimmed);
+        queryClient.invalidateQueries({ queryKey: ["chat-messages", activeSessionId] });
+        queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+      } catch (err) {
+        toast({
+          variant: "destructive",
+          title: language === "fr" ? "Échec de l'envoi" : "فشل الإرسال",
+          description: err instanceof Error ? err.message : undefined,
+        });
+        // Restore input state on error
+        setStagedFile(fileToSend);
+        setMessageInput(trimmed);
+      } finally {
+        setPendingUserMsg(null);
+        setIsUploading(false);
+      }
+      return;
+    }
+
+    // Case 2: Text-only message
     sendChatMessage.mutate(trimmed, {
       onSettled: () => {
-        // Always refresh caches — the user message was already saved to
-        // localStorage before the API call, so it should show regardless.
         queryClient.invalidateQueries({ queryKey: ["chat-messages", activeSessionId] });
         queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
       },
@@ -367,14 +400,11 @@ export default function Chat() {
                       {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
                     </div>
                     <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-secondary text-white rounded-tr-none' : 'bg-card border rounded-tl-none text-card-foreground'}`}>
-                      {msg.content.startsWith(DOCUMENT_PREFIX) ? (
-                        <span className="inline-flex items-center gap-2 font-medium">
-                          <FileText className="w-4 h-4 shrink-0" />
-                          {msg.content.slice(DOCUMENT_PREFIX.length)}
-                        </span>
-                      ) : (
-                        msg.content
-                      )}
+                      <ChatMessageContent
+                        content={msg.content}
+                        role={msg.role as "user" | "assistant"}
+                        isRtl={isRtl}
+                      />
                       {/* RAG metadata for assistant messages */}
                       {msg.role === 'assistant' && (msg.confidence != null || (msg.sources && msg.sources.length > 0)) && (
                         <div className="mt-3 pt-2 border-t border-border/40 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
@@ -431,6 +461,55 @@ export default function Chat() {
                   </div>
                 </div>
               )}
+              {stagedFile && (
+                <div
+                  className={`mb-3 p-3 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-between gap-3 shadow-xs animate-in fade-in slide-in-from-bottom-2 duration-150 ${
+                    isRtl ? "flex-row-reverse" : ""
+                  }`}
+                >
+                  <div
+                    className={`flex items-center gap-3 min-w-0 flex-1 ${
+                      isRtl ? "flex-row-reverse text-right" : "text-left"
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
+                      {stagedFile.type.startsWith("image/") ? (
+                        <ImageIcon className="w-5 h-5" />
+                      ) : (
+                        <FileText className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className="text-xs sm:text-sm font-semibold text-foreground truncate"
+                        title={stagedFile.name}
+                      >
+                        {stagedFile.name}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                        <span>{formatFileSize(stagedFile.size)}</span>
+                        <span>•</span>
+                        <span className="text-primary font-medium">
+                          {language === "fr"
+                            ? "Pièce jointe prête (cliquez sur Envoyer)"
+                            : "مرفق جاهز (اضغط على إرسال)"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                    onClick={() => setStagedFile(null)}
+                    title={language === "fr" ? "Supprimer la pièce jointe" : "إلغاء المرفق"}
+                  >
+                    <X className="w-4 h-4" />
+                    <span className="sr-only">Cancel</span>
+                  </Button>
+                </div>
+              )}
               <form onSubmit={handleSendMessage} className="flex gap-2.5">
                 <input
                   ref={fileInputRef}
@@ -442,12 +521,18 @@ export default function Chat() {
                 />
                 <Button
                   type="button"
-                  variant="outline"
+                  variant={stagedFile ? "secondary" : "outline"}
                   size="icon"
-                  className="shrink-0 w-12 h-12 rounded-xl text-muted-foreground"
+                  className={`shrink-0 w-12 h-12 rounded-xl ${
+                    stagedFile ? "text-primary border-primary/40 bg-primary/10" : "text-muted-foreground"
+                  }`}
                   disabled={isUploading}
                   onClick={() => fileInputRef.current?.click()}
-                  title={language === "fr" ? "Joindre un document" : "إرفاق وثيقة"}
+                  title={
+                    stagedFile
+                      ? (language === "fr" ? "Changer la pièce jointe" : "تغيير المرفق")
+                      : (language === "fr" ? "Joindre un document" : "إرفاق وثيقة")
+                  }
                 >
                   {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                 </Button>
@@ -457,11 +542,25 @@ export default function Chat() {
                 <Input 
                   value={messageInput} 
                   onChange={e => setMessageInput(e.target.value)} 
-                  placeholder={t("chat.placeholder")}
+                  placeholder={
+                    stagedFile
+                      ? (language === "fr" ? "Ajouter un message avec votre document (optionnel)..." : "أضف رسالة مع الوثيقة (اختياري)...")
+                      : t("chat.placeholder")
+                  }
                   className="flex-1 h-12 rounded-xl text-base px-4 bg-muted/50 focus-visible:bg-background"
                 />
-                <Button type="submit" size="icon" disabled={!messageInput.trim() || sendChatMessage.isPending} className="shrink-0 w-12 h-12 rounded-xl bg-primary hover:bg-primary/90 text-white">
-                  <Send className={`w-5 h-5 ${isRtl ? 'rotate-180' : ''}`} />
+                <Button 
+                  type="submit" 
+                  size="icon" 
+                  disabled={(!messageInput.trim() && !stagedFile) || sendChatMessage.isPending || isUploading} 
+                  className="shrink-0 w-12 h-12 rounded-xl bg-primary hover:bg-primary/90 text-white transition-all disabled:opacity-50"
+                  title={language === "fr" ? "Envoyer" : "إرسال"}
+                >
+                  {isUploading || sendChatMessage.isPending ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Send className={`w-5 h-5 ${isRtl ? 'rotate-180' : ''}`} />
+                  )}
                 </Button>
               </form>
             </div>

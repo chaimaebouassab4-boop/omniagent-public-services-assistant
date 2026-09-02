@@ -794,6 +794,7 @@ async def upload_chat_document(
     file: UploadFile = File(...),
     language: str = Form(default="darija"),
     sessionId: str | None = Form(default=None),
+    message: str | None = Form(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -804,7 +805,7 @@ async def upload_chat_document(
     2. Save file to disk.
     3. Extract text (pypdf fast path for selectable PDFs).
     4. OCR fallback via Gemini Vision for scanned PDFs and images.
-    5. LLM analysis: doc type, entities, validity, conformity verdict.
+    5. LLM analysis: doc type, entities, validity, conformity verdict, answering user prompt if provided.
     6. Store extracted text as a hidden context row for follow-up RAG queries.
     7. Return formatted analysis as the assistant's reply.
     """
@@ -831,6 +832,7 @@ async def upload_chat_document(
 
     lang = language if language in MESSAGE_LANGUAGES else "darija"
     session_id = sessionId or uuid.uuid4().hex
+    trimmed_msg = (message or "").strip()
 
     # ── Run Smart Document Analysis (OCR + LLM) ───────────────────────────────
     analysis = analyze_document(
@@ -840,16 +842,18 @@ async def upload_chat_document(
         language=lang,
         google_api_key=settings.google_api_key,
         gemini_model_name=settings.gemini_model,
+        user_query=trimmed_msg,
     )
 
-    # ── Visible user message (attachment bubble in thread) ────────────────────
+    # ── Visible user message (attachment bubble with optional message) ────────
+    user_msg_content = f"[Document] {safe_name}\n\n{trimmed_msg}" if trimmed_msg else f"[Document] {safe_name}"
     db.add(
         ChatMessage(
             case_id=None,
             user_id=current_user.id,
             session_id=session_id,
             sender="user",
-            message=f"[Document] {safe_name}",
+            message=user_msg_content,
             language=lang,
         )
     )

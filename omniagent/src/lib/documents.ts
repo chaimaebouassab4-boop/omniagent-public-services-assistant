@@ -117,11 +117,13 @@ export async function uploadChatDocument(
   file: File,
   language = "darija",
   sessionId?: string,
+  userMessage?: string,
 ): Promise<Message> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("language", language);
   if (sessionId) formData.append("sessionId", sessionId);
+  if (userMessage?.trim()) formData.append("message", userMessage.trim());
   return postMultipart<Message>("/api/chat/documents", formData);
 }
 
