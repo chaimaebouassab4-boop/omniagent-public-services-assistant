@@ -4,6 +4,7 @@ import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Bot, LogOut } from "lucide-react";
 import { getStoredUser, logout, type AuthUser } from "@/lib/auth";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 function initials(user: AuthUser): string {
   const source = user.fullName?.trim() || user.email;
@@ -54,8 +55,11 @@ export function MainLayout({ children }: { children: ReactNode }) {
             </Link>
           </nav>
 
-          {/* Right — lang + auth */}
-          <div className={`flex items-center gap-3 ${isRtl ? "flex-row-reverse" : ""}`}>
+          {/* Right — lang + theme + auth */}
+          <div className={`flex items-center gap-2 sm:gap-3 ${isRtl ? "flex-row-reverse" : ""}`}>
+            {/* Theme Toggle (Night / Light Mode) */}
+            <ThemeToggle />
+
             {/* Language switcher */}
             <div className="flex items-center gap-1 border border-border rounded-lg p-0.5">
               {(["ar", "darija", "fr"] as const).map((lang) => (

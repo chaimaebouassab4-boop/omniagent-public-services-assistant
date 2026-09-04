@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { LogOut, IdCard, FileText, Upload, Loader2, CheckCircle2, Eye, Download, Trash2 } from "lucide-react";
+import { LogOut, IdCard, FileText, Upload, Loader2, CheckCircle2, Eye, Download, Trash2, Sun, Moon, Monitor } from "lucide-react";
+import { useTheme } from "next-themes";
 import { fetchMe, updateMe, logout, isAuthenticated, type PersonalDocument } from "@/lib/auth";
 import { fetchCinPreview, fetchPersonalDocPreview, uploadProfileCin, uploadPersonalDocument, validateFile, CIN_UPLOAD_TYPES, deletePersonalDocument } from "@/lib/documents";
 import { useToast } from "@/hooks/use-toast";
@@ -28,6 +29,7 @@ function formatSize(bytes: number): string {
 
 export default function Profile() {
   const { t, language, setLanguage, isRtl } = useI18n();
+  const { theme, setTheme } = useTheme();
   const [_, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -457,6 +459,42 @@ export default function Profile() {
                 <div className="flex items-center space-x-2 space-x-reverse">
                   <RadioGroupItem value="fr" id="l-fr" />
                   <Label htmlFor="l-fr">Français</Label>
+                </div>
+              </RadioGroup>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{language === "fr" ? "Apparence et Thème" : "المظهر والسمة"}</CardTitle>
+              <CardDescription>
+                {language === "fr"
+                  ? "Choisissez entre le mode clair, le mode sombre (nuit) ou l'adaptation automatique au système."
+                  : "اختر بين الوضع النهاري، الوضع الليلي، أو التوافق التلقائي مع نظام جهازك."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <RadioGroup value={theme ?? "system"} onValueChange={(v) => setTheme(v)}>
+                <div className="flex items-center space-x-2 space-x-reverse mb-3">
+                  <RadioGroupItem value="light" id="theme-light" />
+                  <Label htmlFor="theme-light" className="flex items-center gap-2 cursor-pointer">
+                    <Sun className="w-4 h-4 text-amber-500" />
+                    <span>{language === "fr" ? "Mode clair (Jour)" : "الوضع النهاري"}</span>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 space-x-reverse mb-3">
+                  <RadioGroupItem value="dark" id="theme-dark" />
+                  <Label htmlFor="theme-dark" className="flex items-center gap-2 cursor-pointer">
+                    <Moon className="w-4 h-4 text-sky-400" />
+                    <span>{language === "fr" ? "Mode sombre (Nuit)" : "الوضع الليلي"}</span>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 space-x-reverse">
+                  <RadioGroupItem value="system" id="theme-system" />
+                  <Label htmlFor="theme-system" className="flex items-center gap-2 cursor-pointer">
+                    <Monitor className="w-4 h-4 text-muted-foreground" />
+                    <span>{language === "fr" ? "Automatique (Système)" : "تلقائي (حسب النظام)"}</span>
+                  </Label>
                 </div>
               </RadioGroup>
             </CardContent>

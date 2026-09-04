@@ -9,6 +9,7 @@ import { Eye, EyeOff, ArrowRight, ArrowLeft, Bot, KeyRound, Mail, ShieldCheck } 
 import { login } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api-url";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 
 export default function Login() {
-  const { language, isRtl } = useI18n();
+  const { language, setLanguage, isRtl } = useI18n();
   const [_, setLocation] = useLocation();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
@@ -178,7 +179,28 @@ export default function Login() {
       </div>
 
       {/* Right — Form */}
-      <div className={`flex flex-col justify-center items-center px-6 py-16 bg-background ${isRtl ? "text-right" : "text-left"}`}>
+      <div className={`relative flex flex-col justify-center items-center px-6 py-16 bg-background ${isRtl ? "text-right" : "text-left"}`}>
+        {/* Top bar with ThemeToggle and Language Switcher */}
+        <div className={`absolute top-4 ${isRtl ? "left-4" : "right-4"} flex items-center gap-2 z-10`}>
+          <ThemeToggle />
+          <div className="flex items-center gap-1 border border-border rounded-lg p-0.5 bg-card/80">
+            {(["ar", "darija", "fr"] as const).map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => setLanguage(lang)}
+                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                  language === lang
+                    ? "bg-primary text-white"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {lang === "ar" ? "عربية" : lang === "darija" ? "دارجة" : "FR"}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Mobile logo */}
         <Link href="/" className="flex items-center gap-2 mb-10 lg:hidden">
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">

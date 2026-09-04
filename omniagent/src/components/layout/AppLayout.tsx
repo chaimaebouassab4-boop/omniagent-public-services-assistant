@@ -10,7 +10,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { 
   Home, 
   FileText, 
@@ -104,23 +106,26 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className={`min-h-screen flex w-full ${isRtl ? 'flex-row-reverse' : ''}`}>
         <Sidebar className="border-r border-sidebar-border bg-sidebar">
           <SidebarContent>
-            {/* Header with Title and Notification Bell */}
-            <div className="p-4 py-5 border-b border-sidebar-border flex items-center justify-between">
-              <h2 className="text-xl font-bold text-primary">
+            {/* Header with Title, ThemeToggle and Notification Bell */}
+            <div className="p-4 py-5 border-b border-sidebar-border flex items-center justify-between gap-2">
+              <h2 className="text-xl font-bold text-primary truncate">
                 {t("app.title")}
               </h2>
 
-              {/* Notification Popover for Admin */}
-              {isAdmin && (
-                <Popover open={openNotifs} onOpenChange={setOpenNotifs}>
-                  <PopoverTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="relative h-9 w-9 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      aria-label="Notifications"
-                    >
-                      <Bell className="h-5 w-5" />
+              <div className="flex items-center gap-1 shrink-0">
+                <ThemeToggle className="h-9 w-9 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
+
+                {/* Notification Popover for Admin */}
+                {isAdmin && (
+                  <Popover open={openNotifs} onOpenChange={setOpenNotifs}>
+                    <PopoverTrigger asChild>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="relative h-9 w-9 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        aria-label="Notifications"
+                      >
+                        <Bell className="h-5 w-5" />
                       {pendingCount > 0 && (
                         <span className="absolute top-1 right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white shadow-xs animate-pulse">
                           {pendingCount > 99 ? "99+" : pendingCount}
@@ -222,6 +227,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   </PopoverContent>
                 </Popover>
               )}
+              </div>
             </div>
 
             <SidebarGroup>
@@ -257,6 +263,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </SidebarContent>
         </Sidebar>
         <main className="flex-1 flex flex-col bg-background relative z-0 min-w-0">
+          {/* Mobile Top Bar */}
+          <div className="md:hidden flex items-center justify-between px-4 py-2.5 border-b border-border bg-card/70 backdrop-blur sticky top-0 z-40">
+            <SidebarTrigger />
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+            </div>
+          </div>
           <div className="p-6 md:p-10 flex-1 overflow-auto">
             {children}
           </div>

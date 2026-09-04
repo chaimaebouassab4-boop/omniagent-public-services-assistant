@@ -9,6 +9,7 @@ import {
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "next-themes";
 import { I18nProvider, useI18n } from "@/lib/i18n";
 import { trackVisit } from "@/lib/history";
 import {
@@ -134,15 +135,22 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <I18nProvider>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <AnalyticsTracker />
-            <Router />
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
-      </I18nProvider>
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="system"
+        enableSystem
+        disableTransitionOnChange
+      >
+        <I18nProvider>
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <AnalyticsTracker />
+              <Router />
+            </WouterRouter>
+            <Toaster />
+          </TooltipProvider>
+        </I18nProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

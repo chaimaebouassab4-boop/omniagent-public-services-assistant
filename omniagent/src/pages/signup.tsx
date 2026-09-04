@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, ArrowRight, ArrowLeft, Bot, CheckCircle } from "lucide-react";
 import { signup } from "@/lib/auth";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const BENEFITS = [
   { fr: "Suivez vos dossiers en temps réel", ar: "تابع ملفاتك في الوقت الفعلي", darija: "تبع ملفاتك بالوقت الحقيقي" },
@@ -16,7 +17,7 @@ const BENEFITS = [
 ];
 
 export default function Signup() {
-  const { language, isRtl } = useI18n();
+  const { language, setLanguage, isRtl } = useI18n();
   const [_, setLocation] = useLocation();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -135,7 +136,28 @@ export default function Signup() {
       </div>
 
       {/* Right — Form */}
-      <div className={`flex flex-col justify-center items-center px-6 py-16 bg-background ${isRtl ? "text-right" : "text-left"}`}>
+      <div className={`relative flex flex-col justify-center items-center px-6 py-16 bg-background ${isRtl ? "text-right" : "text-left"}`}>
+        {/* Top bar with ThemeToggle and Language Switcher */}
+        <div className={`absolute top-4 ${isRtl ? "left-4" : "right-4"} flex items-center gap-2 z-10`}>
+          <ThemeToggle />
+          <div className="flex items-center gap-1 border border-border rounded-lg p-0.5 bg-card/80">
+            {(["ar", "darija", "fr"] as const).map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => setLanguage(lang)}
+                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                  language === lang
+                    ? "bg-primary text-white"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {lang === "ar" ? "عربية" : lang === "darija" ? "دارجة" : "FR"}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Mobile logo */}
         <Link href="/" className="flex items-center gap-2 mb-10 lg:hidden">
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">

@@ -2,8 +2,8 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
-@custom-variant dark (&:is(.dark *));
-@custom-variant rtl (&:is([dir=rtl] *));
+@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant rtl (&:where([dir=rtl], [dir=rtl] *));
 
 @theme inline {
   --color-background: hsl(var(--background));

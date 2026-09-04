@@ -32,6 +32,11 @@ export const translations: Translations = {
   "chat.suggested": { ar: "أسئلة مقترحة", fr: "Questions suggérées", darija: "أسئلة مقترحة" },
   "profile.title": { ar: "الملف الشخصي والإعدادات", fr: "Profil & Paramètres", darija: "الملف الشخصي والإعدادات" },
   "admin.title": { ar: "لوحة الإدارة", fr: "Tableau de Bord Administration", darija: "لوحة الإدارة" },
+  "theme.toggle": { ar: "تغيير المظهر", fr: "Changer de thème", darija: "تبديل المظهر" },
+  "theme.light": { ar: "الوضع النهاري", fr: "Mode clair", darija: "الوضع النهاري" },
+  "theme.dark": { ar: "الوضع الليلي", fr: "Mode sombre", darija: "الوضع الليلي" },
+  "theme.system": { ar: "تلقائي (حسب النظام)", fr: "Système", darija: "تلقائي" },
+  "theme.appearance": { ar: "المظهر والسمة", fr: "Apparence du thème", darija: "المظهر والسمة" },
 };
 
 interface I18nContextType {
