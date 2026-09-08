@@ -1,11 +1,17 @@
-from pydantic import Field
+from typing import Any
+import json
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=(".env", "backend/.env", "../.env"),
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
     app_name: str = "Omniagent Public Services API"
     app_version: str = "1.0.0"
@@ -15,10 +21,23 @@ class Settings(BaseSettings):
     )
     jwt_secret_key: str = "dev-secret-key-change-me"
     jwt_algorithm: str = "HS256"
-    allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
+    allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"]
     upload_root: str = "uploads"
     admin_email: str = "admin@demo.local"
     admin_password: str = "admin123"
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
     # The LLM is server configuration; clients never select it per request.
     llm_provider: str = Field(default="ollama", description="ollama, openai, or gemini")
@@ -33,6 +52,7 @@ class Settings(BaseSettings):
 
     google_api_key: str = Field(default="", description="Google Gemini API key for RAG LLM")
     gemini_model: str = Field(default="gemini-3.6-flash", description="Gemini model name")
+    embedding_model: str = Field(default="BAAI/bge-m3", description="HuggingFace embedding model name")
 
 
 settings = Settings()

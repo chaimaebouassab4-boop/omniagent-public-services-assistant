@@ -7,7 +7,6 @@ pytest-tmp/
 
 # Local databases & uploads
 *.db
-chroma_db/
 backend/uploads/
 uploads/
 
@@ -21,4 +20,5 @@ old fr/
 
 # Env & logs
 .env
+backend/.env
 *.log

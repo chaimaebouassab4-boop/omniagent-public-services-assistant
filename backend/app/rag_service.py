@@ -791,8 +791,21 @@ class OmniAgentRAG:
             resolved_service = (
                 service_type
                 or _detect_service_from_query(user_query)
-                or "residence_certificate"
             )
+
+            # If no service detected at all, return a generic "I need more info" response
+            if not resolved_service:
+                return {
+                    "answer": (
+                        "ما قدرتش نفهم بالضبط شنو كتحتاج. "
+                        "تقدر تعطيني مزيد من التفاصيل؟\n\n"
+                        "مثلاً: شهادة السكنى، عقد الازدياد، CIN، السجل العدلي..."
+                    ),
+                    "sources": [],
+                    "confidence": 0.0,
+                    "language": "darija",
+                    "fallback_reason": reason,
+                }
 
             kb_ans = answer_with_metadata(
                 resolved_service, user_query, use_rag=False

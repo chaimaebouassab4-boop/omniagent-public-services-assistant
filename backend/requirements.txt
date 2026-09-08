@@ -16,3 +16,6 @@ llama-index-embeddings-huggingface
 llama-index-retrievers-bm25; sys_platform != "win32"
 rank-bm25
 chromadb
+google-generativeai
+pymupdf
+

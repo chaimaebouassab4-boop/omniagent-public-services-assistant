@@ -173,22 +173,49 @@ def _pdf_first_page_as_png(data: bytes) -> Optional[bytes]:
 
 def _ocr_with_gemini(image_bytes: bytes, mime: str, api_key: str, model: str) -> str:
     """Call Gemini Vision multimodal API to extract raw text from an image/PDF."""
+    if not api_key:
+        print("[WARN] Gemini Vision OCR skipped: GOOGLE_API_KEY is not set.")
+        return ""
     try:
         import google.generativeai as genai  # type: ignore
+        from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
         genai.configure(api_key=api_key)
         encoded = base64.b64encode(image_bytes).decode("utf-8")
-        prompt = (
-            "Extract ALL text from this document image exactly as it appears. "
-            "Preserve Arabic, French, numbers, dates, and any special characters. "
+        prompt_text = (
+            "Extract ALL text from this document exactly as it appears. "
+            "Preserve Arabic (Darija and MSA), French, numbers, dates, stamps, "
+            "and any special characters. "
             "Do NOT translate, summarise, or add commentary — output raw text only."
         )
-        m = genai.GenerativeModel(model)
-        response = m.generate_content([{"mime_type": mime, "data": encoded}, prompt])
-        return (response.text or "").strip()
+        # Build structured parts
+        parts = [
+            {"inline_data": {"mime_type": mime, "data": encoded}},
+            prompt_text,
+        ]
+        m = genai.GenerativeModel(
+            model,
+            safety_settings={
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+            },
+        )
+        response = m.generate_content(parts)
+        try:
+            text = (response.text or "").strip()
+            if text:
+                print(f"[OK] Gemini Vision OCR: extracted {len(text)} chars.")
+            return text
+        except (AttributeError, ValueError) as ve:
+            # Response blocked or no parts — log and return empty
+            print(f"[WARN] Gemini Vision: no text in response ({ve})")
+            return ""
     except Exception as exc:
         print(f"[WARN] Gemini Vision OCR failed: {exc}")
         return ""
+
 
 
 # ─── Step 3: LLM Document Analysis ───────────────────────────────────────────
@@ -221,7 +248,10 @@ def _analyze_with_gemini_sdk(
             user_query_instruction=user_query_instruction,
         )
         response = m.generate_content(prompt_text)
-        return (response.text or "").strip()
+        try:
+            return (response.text or "").strip()
+        except (AttributeError, ValueError):
+            return ""
     except Exception as exc:
         print(f"[WARN] Gemini analysis failed: {exc}")
         return ""
