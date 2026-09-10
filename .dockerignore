@@ -1,0 +1,10 @@
+﻿.git
+.venv
+backend/.venv
+node_modules
+omniagent/node_modules
+omniagent/dist
+dist
+__pycache__
+*.pyc
+*.log
