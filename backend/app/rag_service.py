@@ -458,14 +458,10 @@ class OmniAgentRAG:
         try:
             os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
-            import chromadb
-            from llama_index.core import VectorStoreIndex, Settings, PromptTemplate
-            from llama_index.vector_stores.chroma import ChromaVectorStore
-            from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+            from llama_index.core import Settings, PromptTemplate
             from app.core.config import settings as app_settings
             from app.llm_factory import create_llm
 
-            # Only generation varies; retrieval and embeddings remain shared.
             llm_settings = app_settings.model_copy(update=self._model_overrides)
             Settings.llm = create_llm(llm_settings)
 
@@ -479,32 +475,33 @@ class OmniAgentRAG:
                     corpus = [_tokenize_arabic(node.text) for node in kb_nodes]
                     self._bm25_index = BM25Okapi(corpus)
                     self.bm25_retriever = True
+                    self.initialized = True
                     print(f"[OK] BM25 retriever initialized with {len(kb_nodes)} nodes from knowledge base.")
                 else:
                     print("[WARN] No KB nodes found for BM25 retriever.")
             except Exception as bm25_err:
                 print(f"[WARN] BM25 initialization failed: {bm25_err}")
 
-            # ── 2. Vector Store (Optional enhancement; isolated so failure never crashes the service) ──
-            try:
-                # Embeddings: multilingual-e5-small (117 MB, supports Arabic/French/Darija)
-                Settings.embed_model = HuggingFaceEmbedding(
-                    model_name="intfloat/multilingual-e5-small"
-                )
-                if self.chroma_dir.exists():
-                    client = chromadb.PersistentClient(path=str(self.chroma_dir))
-                    collection = client.get_or_create_collection(self.collection_name)
-                    vector_store = ChromaVectorStore(chroma_collection=collection)
-                    self.index = VectorStoreIndex.from_vector_store(vector_store)
-                    self.qa_prompt = PromptTemplate(QA_PROMPT_TMPL)
-                    self.initialized = True
-                    print(f"[OK] OmniAgentRAG vector collection '{collection.name}' ({collection.count()} vectors).")
-                else:
-                    print(f"[WARN] ChromaDB directory not found at {self.chroma_dir}. Using BM25.")
-                    self.initialized = False
-            except Exception as vector_err:
-                print(f"[WARN] Vector store init skipped (using BM25 + Gemini): {vector_err}")
-                self.initialized = False
+            # ── 2. Vector Store: only loaded if explicitly enabled (prevents 500MB PyTorch RAM crash on Railway) ──
+            if os.getenv("ENABLE_LOCAL_EMBEDDINGS", "false").lower() == "true":
+                try:
+                    import chromadb
+                    from llama_index.core import VectorStoreIndex
+                    from llama_index.vector_stores.chroma import ChromaVectorStore
+                    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+
+                    Settings.embed_model = HuggingFaceEmbedding(
+                        model_name="intfloat/multilingual-e5-small"
+                    )
+                    if self.chroma_dir.exists():
+                        client = chromadb.PersistentClient(path=str(self.chroma_dir))
+                        collection = client.get_or_create_collection(self.collection_name)
+                        vector_store = ChromaVectorStore(chroma_collection=collection)
+                        self.index = VectorStoreIndex.from_vector_store(vector_store)
+                        self.qa_prompt = PromptTemplate(QA_PROMPT_TMPL)
+                        print(f"[OK] ChromaDB vector store loaded: {collection.count()} vectors.")
+                except Exception as vector_err:
+                    print(f"[WARN] Vector store init skipped: {vector_err}")
 
         except Exception as e:
             provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
@@ -546,7 +543,7 @@ class OmniAgentRAG:
 
                 self._rewrite_cache[user_query] = rewritten
                 print(
-                    f"[REWRITE] '{user_query[:50]}' → "
+                    f"[REWRITE] '{user_query[:50]}' -> "
                     f"'{rewritten[:50]}'"
                 )
                 return rewritten
@@ -581,9 +578,9 @@ class OmniAgentRAG:
         Returns:
             Dict with 'answer', 'sources', 'confidence', and 'language'.
         """
-        if not self.initialized or self.index is None:
+        if not self.initialized:
             return self._fallback_query(
-                user_query, service_type, reason="RAG Vector Index offline"
+                user_query, service_type, reason="RAG engine offline"
             )
 
         # Step 1: Detect language and auto-detect service
@@ -611,12 +608,17 @@ class OmniAgentRAG:
                     ]
                 )
 
-            # Step 4: Vector retrieval with rewritten query
-            vector_retriever = self.index.as_retriever(
-                similarity_top_k=5,
-                filters=filters,
-            )
-            vector_nodes = vector_retriever.retrieve(rewritten_query)
+            # Step 4: Vector retrieval with rewritten query (if vector store enabled)
+            vector_nodes = []
+            if self.index is not None:
+                try:
+                    vector_retriever = self.index.as_retriever(
+                        similarity_top_k=5,
+                        filters=filters,
+                    )
+                    vector_nodes = vector_retriever.retrieve(rewritten_query)
+                except Exception as v_err:
+                    print(f"[WARN] Vector retrieval skipped: {v_err}")
 
             # Step 5: BM25 retrieval with original query (keyword matching)
             bm25_nodes: list = []
@@ -658,10 +660,13 @@ class OmniAgentRAG:
                 except Exception as bm25_err:
                     print(f"[WARN] BM25 retrieval failed: {bm25_err}")
 
-            # Step 6: Reciprocal Rank Fusion
-            combined = _reciprocal_rank_fusion(
-                [vector_nodes, bm25_nodes], top_n=5
-            )
+            # Step 6: Reciprocal Rank Fusion if both available, else BM25 nodes
+            if vector_nodes:
+                combined = _reciprocal_rank_fusion(
+                    [vector_nodes, bm25_nodes], top_n=5
+                )
+            else:
+                combined = bm25_nodes[:5]
 
             # Step 7: Build context from fused nodes
             context_parts = [
