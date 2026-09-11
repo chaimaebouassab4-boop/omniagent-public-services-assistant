@@ -469,9 +469,10 @@ class OmniAgentRAG:
             llm_settings = app_settings.model_copy(update=self._model_overrides)
             Settings.llm = create_llm(llm_settings)
 
-            # Embeddings using BAAI/bge-m3 (multilingual, strong Arabic)
+            # Embeddings: multilingual-e5-small (117 MB, supports Arabic/French/Darija)
+            # Much lighter than BAAI/bge-m3 (2.2 GB) — fits Railway free tier RAM
             Settings.embed_model = HuggingFaceEmbedding(
-                model_name="BAAI/bge-m3"
+                model_name="intfloat/multilingual-e5-small"
             )
 
             # ── ChromaDB Vector Store ──

@@ -55,7 +55,8 @@ def build_index(target_dir: Path) -> int:
     from llama_index.embeddings.huggingface import HuggingFaceEmbedding
     from llama_index.vector_stores.chroma import ChromaVectorStore
 
-    Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-m3")
+    # multilingual-e5-small: 117 MB, supports Arabic/French/Darija, fits Railway RAM
+    Settings.embed_model = HuggingFaceEmbedding(model_name="intfloat/multilingual-e5-small")
     Settings.node_parser = SentenceSplitter(chunk_size=512, chunk_overlap=100)
 
     documents = load_documents()
