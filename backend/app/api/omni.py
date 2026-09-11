@@ -742,6 +742,70 @@ async def send_chat_message(
     # Detect service if keyword matches, else None (searches all services)
     detected_service = detect_service_id(body.content)
 
+    # ── Guardrail: detect clearly out-of-scope or gibberish input ────────────
+    _MEANINGFUL_MIN_CHARS = 3
+    _has_arabic = bool(re.search(r'[\u0600-\u06FF]', body.content))
+    _has_french = bool(re.search(r'[a-zA-Z]{2,}', body.content))
+    _is_too_short = len(body.content.strip()) < _MEANINGFUL_MIN_CHARS
+    # Gibberish: long Latin string with no real words (no spaces AND no Arabic)
+    _is_gibberish = (
+        not _has_arabic
+        and len(body.content.strip()) > 6
+        and " " not in body.content.strip()
+        and not any(word in body.content.lower() for word in [
+            "hello", "bonjour", "salam", "merhba", "salut",
+            "merci", "chokran", "help", "aide", "assistance",
+            "cin", "cni", "carte", "document", "pdf", "upload",
+        ])
+    )
+
+    if _is_too_short or _is_gibberish:
+        _out_of_scope_msg = {
+            "darija": (
+                "👋 **أهلاً بيك في OmniAgent!**\n\n"
+                "ما فهمتش سؤالك مزيان. تقدر تسألني بالدارجة، الفرنسية، أو العربية على:\n\n"
+                "• 📋 **شهادة السكنى** — الوثائق، الرسوم، المكان\n"
+                "• 🪪 **CIN / الهوية الوطنية** — التجديد، الفقدان\n"
+                "• 📄 **عقد الازدياد** — الاستخراج، التصحيح\n"
+                "• 💍 **عقد الزواج** — الوثائق، الإجراءات\n"
+                "• ⚖️ **السجل العدلي** — الطلب، المدة\n\n"
+                "كيفاش نعاونك؟"
+            ),
+            "fr": (
+                "👋 **Bienvenue sur OmniAgent !**\n\n"
+                "Je n'ai pas compris votre question. Posez-moi vos questions en darija, français ou arabe sur:\n\n"
+                "• 📋 Certificat de résidence\n"
+                "• 🪪 Carte Nationale d'Identité (CIN)\n"
+                "• 📄 Acte de naissance\n"
+                "• 💍 Acte de mariage\n"
+                "• ⚖️ Casier judiciaire\n\n"
+                "Comment puis-je vous aider ?"
+            ),
+            "arabic": (
+                "👋 **أهلاً بك في OmniAgent!**\n\n"
+                "لم أفهم سؤالك. يمكنك سؤالي بالدارجة أو الفرنسية أو العربية الفصحى حول:\n\n"
+                "• 📋 شهادة الإقامة\n"
+                "• 🪪 بطاقة التعريف الوطنية\n"
+                "• 📄 عقد الازدياد\n"
+                "• 💍 عقد الزواج\n"
+                "• ⚖️ السجل العدلي\n\n"
+                "كيف يمكنني مساعدتك؟"
+            ),
+        }
+        answer_text = _out_of_scope_msg.get(language, _out_of_scope_msg["darija"])
+        assistant_msg = ChatMessage(
+            case_id=None,
+            user_id=current_user.id,
+            session_id=session_id,
+            sender="assistant",
+            message=answer_text,
+            language=language,
+        )
+        db.add(assistant_msg)
+        db.commit()
+        db.refresh(assistant_msg)
+        return serialize_message(assistant_msg, _standalone_count(db, current_user.id, session_id))
+
     try:
         from app.rag_service import query_rag
         rag_res = query_rag(
@@ -750,23 +814,37 @@ async def send_chat_message(
             conversation_history=conversation_history
         )
         answer_text = rag_res.get("answer", "").strip()
-        if not answer_text or rag_res.get("fallback_reason"):
-            # Fall back to structured KB only if RAG is offline
+        # Only fall back if RAG is explicitly offline (fallback_reason), NOT for every answer
+        if not answer_text:
+            if detected_service:
+                answer = answer_with_metadata(
+                    service_id=detected_service,
+                    user_message=body.content,
+                    use_rag=False,
+                    conversation_history=conversation_history,
+                )
+                answer_text = answer.answer
+            else:
+                # No service detected and RAG returned empty — ask for clarification
+                answer_text = (
+                    "ما فهمتش تماماً شنو بغيت. تقدر تعطيني مزيد من التفاصيل على الخدمة الإدارية لي محتاجها؟\n\n"
+                    "مثلاً: شهادة السكنى، عقد الازدياد، السجل العدلي، CIN..."
+                )
+    except Exception as e:
+        print(f"[WARN] RAG query failed: {e}")
+        if detected_service:
             answer = answer_with_metadata(
-                service_id=detected_service or "residence_certificate",
+                service_id=detected_service,
                 user_message=body.content,
                 use_rag=False,
                 conversation_history=conversation_history,
             )
             answer_text = answer.answer
-    except Exception:
-        answer = answer_with_metadata(
-            service_id=detected_service or "residence_certificate",
-            user_message=body.content,
-            use_rag=False,
-            conversation_history=conversation_history,
-        )
-        answer_text = answer.answer
+        else:
+            answer_text = (
+                "وقع مشكل تقني مؤقت. تقدر تسولني مباشرة على أي إجراء إداري وغادي نعاونك."
+            )
+
 
     assistant_msg = ChatMessage(
         case_id=None,
