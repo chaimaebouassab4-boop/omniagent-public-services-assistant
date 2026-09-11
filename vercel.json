@@ -1,0 +1,9 @@
+{
+  "buildCommand": "cd omniagent && npm install && npm run build",
+  "outputDirectory": "omniagent/dist/public",
+  "installCommand": "cd omniagent && npm install",
+  "framework": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
