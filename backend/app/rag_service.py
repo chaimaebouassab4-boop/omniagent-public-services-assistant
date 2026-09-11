@@ -469,57 +469,42 @@ class OmniAgentRAG:
             llm_settings = app_settings.model_copy(update=self._model_overrides)
             Settings.llm = create_llm(llm_settings)
 
-            # Embeddings: multilingual-e5-small (117 MB, supports Arabic/French/Darija)
-            # Much lighter than BAAI/bge-m3 (2.2 GB) — fits Railway free tier RAM
-            Settings.embed_model = HuggingFaceEmbedding(
-                model_name="intfloat/multilingual-e5-small"
-            )
-
-            # ── ChromaDB Vector Store ──
-            if self.chroma_dir.exists():
-                client = chromadb.PersistentClient(path=str(self.chroma_dir))
-                collection = client.get_or_create_collection(self.collection_name)
-                vector_store = ChromaVectorStore(chroma_collection=collection)
-                self.index = VectorStoreIndex.from_vector_store(vector_store)
-                self.qa_prompt = PromptTemplate(QA_PROMPT_TMPL)
-                self.initialized = True
-                print(
-                    f"[OK] OmniAgentRAG initialized: collection "
-                    f"'{collection.name}' ({collection.count()} vectors)."
-                )
-            else:
-                print(
-                    f"[WARN] ChromaDB directory not found at "
-                    f"{self.chroma_dir}. RAG running in fallback mode."
-                )
-                self.initialized = False
-
-            # ── BM25 Retriever (Hybrid Search) ──
+            # ── 1. BM25 Retriever (Fast, lightweight ~5MB, ultra-reliable) ──
             try:
                 from rank_bm25 import BM25Okapi
 
                 kb_nodes = _load_kb_nodes()
                 if kb_nodes:
                     self._bm25_nodes = kb_nodes
-                    # Tokenize each node's text for BM25 indexing
-                    corpus = [
-                        _tokenize_arabic(node.text) for node in kb_nodes
-                    ]
+                    corpus = [_tokenize_arabic(node.text) for node in kb_nodes]
                     self._bm25_index = BM25Okapi(corpus)
-                    self.bm25_retriever = True  # flag that BM25 is available
-                    print(
-                        f"[OK] BM25 retriever initialized with "
-                        f"{len(kb_nodes)} nodes from knowledge base."
-                    )
+                    self.bm25_retriever = True
+                    print(f"[OK] BM25 retriever initialized with {len(kb_nodes)} nodes from knowledge base.")
                 else:
                     print("[WARN] No KB nodes found for BM25 retriever.")
-            except ImportError:
-                print(
-                    "[WARN] rank-bm25 not installed. "
-                    "Hybrid search disabled; using vector-only retrieval."
-                )
             except Exception as bm25_err:
                 print(f"[WARN] BM25 initialization failed: {bm25_err}")
+
+            # ── 2. Vector Store (Optional enhancement; isolated so failure never crashes the service) ──
+            try:
+                # Embeddings: multilingual-e5-small (117 MB, supports Arabic/French/Darija)
+                Settings.embed_model = HuggingFaceEmbedding(
+                    model_name="intfloat/multilingual-e5-small"
+                )
+                if self.chroma_dir.exists():
+                    client = chromadb.PersistentClient(path=str(self.chroma_dir))
+                    collection = client.get_or_create_collection(self.collection_name)
+                    vector_store = ChromaVectorStore(chroma_collection=collection)
+                    self.index = VectorStoreIndex.from_vector_store(vector_store)
+                    self.qa_prompt = PromptTemplate(QA_PROMPT_TMPL)
+                    self.initialized = True
+                    print(f"[OK] OmniAgentRAG vector collection '{collection.name}' ({collection.count()} vectors).")
+                else:
+                    print(f"[WARN] ChromaDB directory not found at {self.chroma_dir}. Using BM25.")
+                    self.initialized = False
+            except Exception as vector_err:
+                print(f"[WARN] Vector store init skipped (using BM25 + Gemini): {vector_err}")
+                self.initialized = False
 
         except Exception as e:
             provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
@@ -811,8 +796,26 @@ class OmniAgentRAG:
             kb_ans = answer_with_metadata(
                 resolved_service, user_query, use_rag=False
             )
+            answer_text = kb_ans.answer
+            try:
+                from llama_index.core import Settings
+                if Settings.llm and kb_ans.answer:
+                    lang = _detect_language(user_query)
+                    lang_inst = "en français" if lang == "french" else "بالدارجة المغربية"
+                    prompt = (
+                        f"Tu es OmniAgent, l'assistant officiel pour les démarches administratives marocaines.\n"
+                        f"Informations officielles :\n{kb_ans.answer}\n\n"
+                        f"Question : {user_query}\n"
+                        f"Réponds de manière claire, structurée et chaleureuse {lang_inst} :"
+                    )
+                    resp = Settings.llm.complete(prompt)
+                    if resp and resp.text:
+                        answer_text = resp.text.strip()
+            except Exception:
+                pass
+
             return {
-                "answer": kb_ans.answer,
+                "answer": answer_text,
                 "sources": kb_ans.sources,
                 "confidence": kb_ans.confidence,
                 "language": "darija",
