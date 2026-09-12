@@ -40,3 +40,16 @@ async def startup_event() -> None:
 @app.get("/")
 async def root() -> dict:
     return {"message": "Omniagent Public Services API.."}
+
+
+@app.get("/api/diag")
+async def diag() -> dict:
+    import os
+    return {
+        "status": "online",
+        "version": "2026-09-12-resilient-rag",
+        "llm_provider": os.getenv("LLM_PROVIDER"),
+        "gemini_model": os.getenv("GEMINI_MODEL"),
+        "google_key_len": len(os.getenv("GOOGLE_API_KEY", "")),
+    }
+

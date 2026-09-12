@@ -11,11 +11,7 @@ llama-index-core
 llama-index-llms-ollama
 llama-index-llms-openai
 llama-index-llms-google-genai
-llama-index-vector-stores-chroma
-llama-index-embeddings-huggingface
-llama-index-retrievers-bm25; sys_platform != "win32"
 rank-bm25
-chromadb
 google-generativeai
 pymupdf
 
