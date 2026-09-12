@@ -6,12 +6,8 @@ python-multipart
 sqlalchemy
 python-jose
 pypdf
-# ── RAG pipeline ──
-llama-index-core
-llama-index-llms-ollama
-llama-index-llms-openai
-llama-index-llms-google-genai
+python-dotenv
+# ── RAG pipeline (lightweight: no LlamaIndex, no PyTorch) ──
 rank-bm25
 google-generativeai
 pymupdf
-

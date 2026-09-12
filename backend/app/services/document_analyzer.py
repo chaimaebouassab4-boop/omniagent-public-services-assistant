@@ -262,30 +262,35 @@ def _analyze_with_llamaindex_llm(
     lang: str,
     user_query: str = "",
 ) -> str:
-    """Fallback: use the LlamaIndex global LLM (Ollama / OpenAI / Gemini via LI)."""
+    """Fallback: use google-generativeai directly (no LlamaIndex)."""
     prompts = _DOCUMENT_PROMPTS[lang]
     user_query_instruction = ""
     if user_query and user_query.strip():
         if lang == "fr":
-            user_query_instruction = f"👉 **Question du citoyen** : \"{user_query.strip()}\"\nRépondez à cette question.\n\n"
+            user_query_instruction = f"Question du citoyen : \"{user_query.strip()}\"\nRepondez a cette question.\n\n"
         else:
-            user_query_instruction = f"👉 **سؤال المواطن** : \"{user_query.strip()}\"\n\n"
+            user_query_instruction = f"سؤال المواطن : \"{user_query.strip()}\"\n\n"
 
     try:
-        from llama_index.core import Settings as LISettings  # type: ignore
+        import google.generativeai as genai
+        import os
 
-        llm = LISettings.llm
-        if llm is None:
+        api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+        model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+        if not api_key:
             return ""
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name=model_name)
         prompt_text = prompts["analyze"].format(
             text=text[:4000],
             user_query_instruction=user_query_instruction,
         )
         full_prompt = prompts["system"] + "\n\n" + prompt_text
-        response = llm.complete(full_prompt)
-        return (str(response) or "").strip()
+        response = model.generate_content(full_prompt)
+        return (response.text or "").strip()
     except Exception as exc:
-        print(f"[WARN] LlamaIndex LLM analysis failed: {exc}")
+        print(f"[WARN] Gemini fallback analysis failed: {exc}")
         return ""
 
 

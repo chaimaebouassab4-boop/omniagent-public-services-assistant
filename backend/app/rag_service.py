@@ -1,18 +1,21 @@
-"""RAG Service Module (OmniAgent RAG)
+"""RAG Service Module (OmniAgent RAG) — Lightweight Edition
 
-Wraps ChromaDB + LlamaIndex + BAAI/bge-m3 + configurable LLM into a reusable service.
+Pure BM25 + google-generativeai implementation.
+Zero LlamaIndex dependencies — runs within Railway's 512 MB RAM limit.
 
-Architecture upgrades:
-  - Hybrid Search: Vector (ChromaDB) + BM25 keyword matching with Reciprocal Rank Fusion
-  - Query Rewriting: Darija/French → formal MSA Arabic before search
+Architecture:
+  - BM25 keyword search over local knowledge base JSON/MD files
+  - Query Rewriting: Darija/French -> formal MSA Arabic before search
   - Smart Service Detection: 50+ keywords across Darija/Arabic/French
-  - Direct Answer Prompting: Forces concise, specific answers
+  - Direct Answer Prompting via Gemini Flash
 """
 import json
 import os
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, List, Dict, Sequence
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env if present
@@ -22,9 +25,24 @@ load_dotenv()
 THIS_FILE = Path(__file__).resolve()
 # Root directory of the project (omniagent-public-services-assistant)
 ROOT_DIR = THIS_FILE.parents[2]
-CHROMA_DIR = ROOT_DIR / "chroma_db"
 KNOWLEDGE_DIR = ROOT_DIR / "tests" / "knowledge_base"
 EXCLUDED_KB_NAMES = {"test_cases.json", "all_test_cases.json"}
+
+
+# ─── Lightweight data classes (replace LlamaIndex TextNode / NodeWithScore) ──
+@dataclass
+class KBNode:
+    """A single knowledge-base chunk with metadata."""
+    text: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ScoredNode:
+    """A KBNode with a relevance score."""
+    node: KBNode = field(default_factory=KBNode)
+    score: float = 0.0
+
 
 # ─── Improved QA Prompt (forces direct answers) ─────────────────────────────
 QA_PROMPT_TMPL = (
@@ -52,7 +70,7 @@ QA_PROMPT_TMPL = (
     "الجواب المباشر: "
 )
 
-# ─── Query Rewrite Prompt (Darija/French → formal MSA) ───────────────────────
+# ─── Query Rewrite Prompt (Darija/French -> formal MSA) ───────────────────────
 REWRITE_PROMPT = (
     "أنت مترجم متخصص. حول السؤال التالي إلى العربية الفصحى الرسمية "
     "مع الحفاظ على المعنى والقصد بالضبط.\n"
@@ -160,7 +178,7 @@ def _is_rate_limit_error(error: BaseException) -> bool:
 
 
 # ─── Expanded Service Auto-Detection Keywords ────────────────────────────────
-# Maps keywords (Arabic/Darija/French) → canonical service_id.
+# Maps keywords (Arabic/Darija/French) -> canonical service_id.
 # Expanded with 50+ additional Darija slang, French partials, and synonyms.
 _SERVICE_KEYWORDS: Dict[str, List[str]] = {
     "criminal_record": [
@@ -236,15 +254,13 @@ def _detect_service_from_query(user_query: str) -> Optional[str]:
 
 
 # ─── BM25 Node Loading ──────────────────────────────────────────────────────
-def _load_kb_nodes() -> list:
-    """Load knowledge base files into granular TextNode objects for BM25.
+def _load_kb_nodes() -> List[KBNode]:
+    """Load knowledge base files into granular KBNode objects for BM25.
 
     Creates fine-grained nodes (one per FAQ entry, one per structured field)
     so BM25 keyword matching can pinpoint exact answers.
     """
-    from llama_index.core.schema import TextNode
-
-    nodes: list = []
+    nodes: List[KBNode] = []
 
     for path in sorted(KNOWLEDGE_DIR.rglob("*")):
         if not path.is_file() or path.suffix.lower() not in {".json", ".md"}:
@@ -267,7 +283,7 @@ def _load_kb_nodes() -> list:
                     data = json.load(f)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 text = path.read_text(encoding="utf-8", errors="replace")
-                nodes.append(TextNode(
+                nodes.append(KBNode(
                     text=text,
                     metadata={**base_meta, "node_type": "raw"},
                 ))
@@ -275,12 +291,12 @@ def _load_kb_nodes() -> list:
 
             svc_name = data.get("service_name_ar", service_type)
 
-            # One node per FAQ entry (granular — best for BM25)
+            # One node per FAQ entry (granular -- best for BM25)
             for faq in data.get("faq", []):
                 q = faq.get("question", "")
                 a = faq.get("answer", "")
                 if q and a:
-                    nodes.append(TextNode(
+                    nodes.append(KBNode(
                         text=f"سؤال: {q}\nجواب: {a}",
                         metadata={**base_meta, "node_type": "faq"},
                     ))
@@ -289,7 +305,7 @@ def _load_kb_nodes() -> list:
             for field_key in ("description", "fees", "validity_period", "note"):
                 value = data.get(field_key)
                 if value and isinstance(value, str):
-                    nodes.append(TextNode(
+                    nodes.append(KBNode(
                         text=f"{svc_name} - {field_key}: {value}",
                         metadata={**base_meta, "node_type": field_key},
                     ))
@@ -298,7 +314,7 @@ def _load_kb_nodes() -> list:
             req_docs = data.get("required_documents")
             if isinstance(req_docs, list) and req_docs:
                 docs_text = "\n".join(f"- {d}" for d in req_docs)
-                nodes.append(TextNode(
+                nodes.append(KBNode(
                     text=f"الوثائق المطلوبة لـ{svc_name}:\n{docs_text}",
                     metadata={**base_meta, "node_type": "required_documents"},
                 ))
@@ -306,7 +322,7 @@ def _load_kb_nodes() -> list:
                 for cat, doc_list in req_docs.items():
                     if isinstance(doc_list, list) and doc_list:
                         docs_text = "\n".join(f"- {d}" for d in doc_list)
-                        nodes.append(TextNode(
+                        nodes.append(KBNode(
                             text=f"الوثائق المطلوبة لـ{svc_name} ({cat}):\n{docs_text}",
                             metadata={**base_meta, "node_type": "required_documents"},
                         ))
@@ -315,7 +331,7 @@ def _load_kb_nodes() -> list:
             steps = data.get("general_steps")
             if isinstance(steps, list) and steps:
                 steps_text = "\n".join(f"{i+1}. {s}" for i, s in enumerate(steps))
-                nodes.append(TextNode(
+                nodes.append(KBNode(
                     text=f"خطوات {svc_name}:\n{steps_text}",
                     metadata={**base_meta, "node_type": "general_steps"},
                 ))
@@ -325,7 +341,7 @@ def _load_kb_nodes() -> list:
                         steps_text = "\n".join(
                             f"{i+1}. {s}" for i, s in enumerate(step_list)
                         )
-                        nodes.append(TextNode(
+                        nodes.append(KBNode(
                             text=f"خطوات {svc_name} ({cat}):\n{steps_text}",
                             metadata={**base_meta, "node_type": "general_steps"},
                         ))
@@ -334,68 +350,12 @@ def _load_kb_nodes() -> list:
         else:
             text = path.read_text(encoding="utf-8", errors="replace")
             if text.strip():
-                nodes.append(TextNode(
+                nodes.append(KBNode(
                     text=text,
                     metadata={**base_meta, "node_type": "markdown"},
                 ))
 
     return nodes
-
-
-# ─── Reciprocal Rank Fusion ─────────────────────────────────────────────────
-def _reciprocal_rank_fusion(
-    results_lists: List[list],
-    k: int = 60,
-    top_n: int = 5,
-) -> list:
-    """Combine results from multiple retrievers using Reciprocal Rank Fusion.
-
-    Each result list is a List[NodeWithScore]. Nodes appearing in multiple
-    lists get a higher fused score. Deduplication by text prefix.
-
-    Args:
-        results_lists: List of retriever result lists.
-        k: RRF constant (default 60, standard in literature).
-        top_n: Number of results to return.
-    """
-    # Accumulate RRF scores keyed by a text fingerprint (first 120 chars)
-    fused_scores: Dict[str, float] = {}
-    node_map: Dict[str, Any] = {}  # fingerprint → best NodeWithScore
-
-    for results in results_lists:
-        for rank, node_with_score in enumerate(results):
-            text = getattr(node_with_score.node, "text", "") or ""
-            fingerprint = text[:120].strip()
-            if not fingerprint:
-                continue
-
-            rrf_score = 1.0 / (k + rank + 1)
-            fused_scores[fingerprint] = (
-                fused_scores.get(fingerprint, 0.0) + rrf_score
-            )
-
-            # Keep the copy with the higher original score
-            existing = node_map.get(fingerprint)
-            if existing is None:
-                node_map[fingerprint] = node_with_score
-            else:
-                old_score = getattr(existing, "score", 0.0) or 0.0
-                new_score = getattr(node_with_score, "score", 0.0) or 0.0
-                if new_score > old_score:
-                    node_map[fingerprint] = node_with_score
-
-    # Sort by fused score descending
-    sorted_fps = sorted(
-        fused_scores.keys(), key=lambda fp: fused_scores[fp], reverse=True
-    )
-
-    from llama_index.core.schema import NodeWithScore
-
-    return [
-        NodeWithScore(node=node_map[fp].node, score=fused_scores[fp])
-        for fp in sorted_fps[:top_n]
-        if fp in node_map
-    ]
 
 
 # ─── Arabic Tokenizer for BM25 ──────────────────────────────────────────────
@@ -410,10 +370,10 @@ def _tokenize_arabic(text: str) -> List[str]:
     return [t.lower() if t.isascii() else t for t in tokens if len(t) > 1]
 
 
-# ─── Normalise service_type → metadata folder name ──────────────────────────
+# ─── Normalise service_type -> metadata folder name ──────────────────────────
 def _normalize_service_filter(service_type: str) -> str:
     """Convert canonical service id (e.g. 'death_certificate') to the
-    folder name stored in ChromaDB metadata (e.g. 'death')."""
+    folder name stored in metadata (e.g. 'death')."""
     return (
         service_type.lower()
         .replace("_certificate", "")
@@ -422,50 +382,72 @@ def _normalize_service_filter(service_type: str) -> str:
     )
 
 
+# ─── Gemini LLM wrapper ─────────────────────────────────────────────────────
+def _create_gemini_model():
+    """Create and configure a google-generativeai GenerativeModel.
+
+    Returns None if GOOGLE_API_KEY is missing.
+    """
+    import google.generativeai as genai
+
+    api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+
+    if not api_key:
+        print("[WARN] GOOGLE_API_KEY not set -- LLM features disabled")
+        return None
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name=model_name,
+        generation_config=genai.GenerationConfig(temperature=0.1),
+    )
+    print(f"[OK] Gemini model configured: {model_name}")
+    return model
+
+
+def _llm_generate(model, prompt: str) -> str:
+    """Call Gemini generate_content and return text. Returns '' on failure."""
+    if model is None:
+        return ""
+    try:
+        response = model.generate_content(prompt)
+        return (response.text or "").strip()
+    except Exception as e:
+        print(f"[WARN] Gemini generate failed: {e}")
+        return ""
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # Main RAG Engine
 # ═════════════════════════════════════════════════════════════════════════════
 class OmniAgentRAG:
-    """Reusable RAG engine with hybrid retrieval and query rewriting."""
+    """Reusable RAG engine with BM25 retrieval and Gemini synthesis."""
 
     def __init__(
         self,
-        chroma_dir: Optional[Path] = None,
-        collection_name: str = "public_services_kb",
         ollama_model: Optional[str] = None,
         gemini_model: Optional[str] = None,
     ):
-        self.chroma_dir = chroma_dir or CHROMA_DIR
-        self.collection_name = collection_name
         self.initialized = False
-        self.index = None
-        self.qa_prompt = None
-        self.bm25_retriever = None  # NEW: BM25 retriever for hybrid search
-        self._rewrite_cache: Dict[str, str] = {}  # query → MSA cache
-        self._model_overrides = {
-            key: value
-            for key, value in {
-                "ollama_model": ollama_model,
-                "gemini_model": gemini_model,
-            }.items()
-            if value is not None
-        }
+        self.bm25_retriever = False
+        self._gemini = None
+        self._bm25_nodes: List[KBNode] = []
+        self._bm25_index = None
+        self._rewrite_cache: Dict[str, str] = {}
+        # Allow overriding model name
+        if gemini_model:
+            os.environ["GEMINI_MODEL"] = gemini_model
         self._init_rag()
 
     # ─── Initialization ──────────────────────────────────────────────────
     def _init_rag(self) -> None:
-        """Initialize LlamaIndex, ChromaDB vector store, and BM25 retriever."""
+        """Initialize BM25 retriever and Gemini LLM."""
         try:
-            os.environ["ANONYMIZED_TELEMETRY"] = "False"
+            # ── 1. Gemini LLM ──
+            self._gemini = _create_gemini_model()
 
-            from llama_index.core import Settings, PromptTemplate
-            from app.core.config import settings as app_settings
-            from app.llm_factory import create_llm
-
-            llm_settings = app_settings.model_copy(update=self._model_overrides)
-            Settings.llm = create_llm(llm_settings)
-
-            # ── 1. BM25 Retriever (Fast, lightweight ~5MB, ultra-reliable) ──
+            # ── 2. BM25 Retriever (Fast, lightweight ~5MB, ultra-reliable) ──
             try:
                 from rank_bm25 import BM25Okapi
 
@@ -482,36 +464,11 @@ class OmniAgentRAG:
             except Exception as bm25_err:
                 print(f"[WARN] BM25 initialization failed: {bm25_err}")
 
-            # ── 2. Vector Store: only loaded if explicitly enabled (prevents 500MB PyTorch RAM crash on Railway) ──
-            if os.getenv("ENABLE_LOCAL_EMBEDDINGS", "false").lower() == "true":
-                try:
-                    import chromadb
-                    from llama_index.core import VectorStoreIndex
-                    from llama_index.vector_stores.chroma import ChromaVectorStore
-                    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-
-                    Settings.embed_model = HuggingFaceEmbedding(
-                        model_name="intfloat/multilingual-e5-small"
-                    )
-                    if self.chroma_dir.exists():
-                        client = chromadb.PersistentClient(path=str(self.chroma_dir))
-                        collection = client.get_or_create_collection(self.collection_name)
-                        vector_store = ChromaVectorStore(chroma_collection=collection)
-                        self.index = VectorStoreIndex.from_vector_store(vector_store)
-                        self.qa_prompt = PromptTemplate(QA_PROMPT_TMPL)
-                        print(f"[OK] ChromaDB vector store loaded: {collection.count()} vectors.")
-                except Exception as vector_err:
-                    print(f"[WARN] Vector store init skipped: {vector_err}")
-
         except Exception as e:
-            provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
-            print(
-                f"[WARN] LLM provider '{provider}' unavailable "
-                f"during RAG initialization: {e}"
-            )
+            print(f"[WARN] RAG initialization error: {e}")
             self.initialized = False
 
-    # ─── Query Rewriting (Darija/French → MSA) ───────────────────────────
+    # ─── Query Rewriting (Darija/French -> MSA) ───────────────────────────
     def _rewrite_query(self, user_query: str) -> str:
         """Rewrite Darija/French query to formal Arabic for better retrieval.
 
@@ -527,16 +484,12 @@ class OmniAgentRAG:
             return self._rewrite_cache[user_query]
 
         try:
-            from llama_index.core import Settings as LISettings
-
             prompt = REWRITE_PROMPT.replace("{query}", user_query)
-            response = LISettings.llm.complete(prompt)
-            rewritten = str(response).strip()
+            rewritten = _llm_generate(self._gemini, prompt)
 
-            # Sanity check — rewritten should contain Arabic characters
+            # Sanity check -- rewritten should contain Arabic characters
             if re.search(r"[\u0600-\u06FF]", rewritten) and len(rewritten) > 3:
                 # Remove any preamble the LLM might add
-                # (sometimes it says "الترجمة: ..." before the actual text)
                 for prefix in ["الترجمة:", "الترجمة بالعربية الفصحى:"]:
                     if rewritten.startswith(prefix):
                         rewritten = rewritten[len(prefix):].strip()
@@ -560,23 +513,13 @@ class OmniAgentRAG:
         service_type: Optional[str] = None,
         conversation_history: Optional[Sequence[ConversationMessage]] = None,
     ) -> Dict[str, Any]:
-        """Query RAG pipeline with hybrid search and query rewriting.
+        """Query RAG pipeline with BM25 search and Gemini synthesis.
 
         Flow:
-          1. Detect language → auto-detect service type
-          2. Rewrite query (Darija/French → MSA) for better retrieval
-          3. Vector search (ChromaDB) with rewritten query + metadata filter
-          4. BM25 keyword search with original query + post-filter
-          5. Fuse results using Reciprocal Rank Fusion
-          6. Generate answer with the improved direct-answer prompt
-
-        Args:
-            user_query: The question in Arabic, Darija, or French.
-            service_type: Optional service category filter.
-            conversation_history: Optional recent conversation turns.
-
-        Returns:
-            Dict with 'answer', 'sources', 'confidence', and 'language'.
+          1. Detect language -> auto-detect service type
+          2. Rewrite query (Darija/French -> MSA) for better retrieval
+          3. BM25 keyword search with original + rewritten query
+          4. Generate answer with the improved direct-answer prompt via Gemini
         """
         if not self.initialized:
             return self._fallback_query(
@@ -591,58 +534,29 @@ class OmniAgentRAG:
             # Step 2: Rewrite query to MSA for better retrieval
             rewritten_query = self._rewrite_query(user_query)
 
-            # Step 3: Build metadata filter for service type
-            filters = None
+            # Step 3: BM25 retrieval
             clean_service = None
             if resolved_service:
                 clean_service = _normalize_service_filter(resolved_service)
-                from llama_index.core.vector_stores import (
-                    MetadataFilters,
-                    ExactMatchFilter,
-                )
-                filters = MetadataFilters(
-                    filters=[
-                        ExactMatchFilter(
-                            key="service_type", value=clean_service
-                        )
-                    ]
-                )
 
-            # Step 4: Vector retrieval with rewritten query (if vector store enabled)
-            vector_nodes = []
-            if self.index is not None:
+            bm25_nodes: List[ScoredNode] = []
+            if self.bm25_retriever and self._bm25_index is not None:
                 try:
-                    vector_retriever = self.index.as_retriever(
-                        similarity_top_k=5,
-                        filters=filters,
-                    )
-                    vector_nodes = vector_retriever.retrieve(rewritten_query)
-                except Exception as v_err:
-                    print(f"[WARN] Vector retrieval skipped: {v_err}")
-
-            # Step 5: BM25 retrieval with original query (keyword matching)
-            bm25_nodes: list = []
-            if self.bm25_retriever and hasattr(self, "_bm25_index"):
-                try:
-                    from llama_index.core.schema import NodeWithScore
-
                     query_tokens = _tokenize_arabic(user_query)
                     scores = self._bm25_index.get_scores(query_tokens)
 
-                    # Get top-10 indices by BM25 score
-                    import numpy as np
+                    # Get top-10 indices by BM25 score (pure Python, no numpy)
+                    indexed_scores = list(enumerate(scores))
+                    indexed_scores.sort(key=lambda x: x[1], reverse=True)
+                    top_indices = indexed_scores[:10]
 
-                    top_indices = np.argsort(scores)[::-1][:10]
-
-                    raw_bm25 = []
-                    for idx in top_indices:
-                        if scores[idx] > 0:
-                            raw_bm25.append(
-                                NodeWithScore(
-                                    node=self._bm25_nodes[idx],
-                                    score=float(scores[idx]),
-                                )
-                            )
+                    raw_bm25: List[ScoredNode] = []
+                    for idx, score in top_indices:
+                        if score > 0:
+                            raw_bm25.append(ScoredNode(
+                                node=self._bm25_nodes[idx],
+                                score=float(score),
+                            ))
 
                     if clean_service:
                         # Post-filter BM25 results by service type
@@ -660,19 +574,13 @@ class OmniAgentRAG:
                 except Exception as bm25_err:
                     print(f"[WARN] BM25 retrieval failed: {bm25_err}")
 
-            # Step 6: Reciprocal Rank Fusion if both available, else BM25 nodes
-            if vector_nodes:
-                combined = _reciprocal_rank_fusion(
-                    [vector_nodes, bm25_nodes], top_n=5
-                )
-            else:
-                combined = bm25_nodes[:5]
+            combined = bm25_nodes[:5]
 
-            # Step 7: Build context from fused nodes
+            # Step 4: Build context from retrieved nodes
             context_parts = [
                 node.node.text
                 for node in combined
-                if getattr(node.node, "text", "").strip()
+                if node.node.text.strip()
             ]
             context = "\n\n---\n\n".join(context_parts)
 
@@ -680,47 +588,38 @@ class OmniAgentRAG:
                 return self._fallback_query(
                     user_query,
                     service_type,
-                    reason="No relevant context found after hybrid search",
+                    reason="No relevant context found after BM25 search",
                 )
 
-            # Step 8: Format prompt with conversation history
+            # Step 5: Format prompt with conversation history
             prompt_tmpl = _prompt_with_history(conversation_history)
             prompt = prompt_tmpl.replace(
                 "{context_str}", context
             ).replace("{query_str}", user_query)
 
-            # Step 9: Call LLM to generate answer
-            from llama_index.core import Settings as LISettings
+            # Step 6: Call Gemini to generate answer
+            answer_text = _llm_generate(self._gemini, prompt)
 
-            response = LISettings.llm.complete(prompt)
-            answer_text = str(response).strip()
+            if not answer_text:
+                # LLM failed -- return raw KB context as answer
+                answer_text = context_parts[0] if context_parts else ""
 
-            # Step 10: Extract metadata from retrieved nodes
+            # Step 7: Extract metadata from retrieved nodes
             sources: List[str] = []
-            max_score = 0.0
-
-            for node_with_score in combined:
-                meta = getattr(node_with_score.node, "metadata", {}) or {}
-                score = getattr(node_with_score, "score", 0.0) or 0.0
-                if score > max_score:
-                    max_score = float(score)
-
+            for scored_node in combined:
+                meta = scored_node.node.metadata
                 fp = meta.get("file_path", "") or meta.get("file_name", "")
                 if fp:
                     rel_path = Path(fp).name
                     if rel_path not in sources:
                         sources.append(rel_path)
 
-            # Calculate confidence — RRF scores are inherently small
-            # (max ~0.033), so we normalize: base 0.80 for any RAG answer,
-            # boosted by the number of retrieval sources and result count.
+            # Calculate confidence
             n_results = len(combined)
             n_bm25_hits = len(bm25_nodes)
             if n_results > 0:
                 base = 0.80
-                # Boost if multiple sources found
                 source_boost = min(0.10, 0.02 * len(sources))
-                # Boost if BM25 also found matches (hybrid agreement)
                 bm25_boost = 0.05 if n_bm25_hits > 0 else 0.0
                 confidence = round(
                     min(0.98, base + source_boost + bm25_boost), 2
@@ -748,21 +647,16 @@ class OmniAgentRAG:
             }
 
         except Exception as e:
-            provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
             if _is_rate_limit_error(e):
                 print(
-                    f"[WARN] LLM provider '{provider}' rate limited "
-                    f"(HTTP 429); using local KB fallback"
+                    "[WARN] Gemini rate limited (HTTP 429); using local KB fallback"
                 )
                 return self._fallback_query(
                     user_query,
                     service_type,
-                    reason=f"LLM provider '{provider}' rate limited (HTTP 429)",
+                    reason="Gemini rate limited (HTTP 429)",
                 )
-            print(
-                f"[WARN] LLM provider '{provider}' unavailable "
-                f"during RAG query: {e}"
-            )
+            print(f"[WARN] RAG query error: {e}")
             return self._fallback_query(
                 user_query, service_type, reason=str(e)
             )
@@ -802,9 +696,10 @@ class OmniAgentRAG:
                 resolved_service, user_query, use_rag=False
             )
             answer_text = kb_ans.answer
+
+            # Polish with Gemini if available
             try:
-                from llama_index.core import Settings
-                if Settings.llm and kb_ans.answer:
+                if self._gemini and kb_ans.answer:
                     lang = _detect_language(user_query)
                     lang_inst = "en français" if lang == "french" else "بالدارجة المغربية"
                     prompt = (
@@ -813,9 +708,9 @@ class OmniAgentRAG:
                         f"Question : {user_query}\n"
                         f"Réponds de manière claire, structurée et chaleureuse {lang_inst} :"
                     )
-                    resp = Settings.llm.complete(prompt)
-                    if resp and resp.text:
-                        answer_text = resp.text.strip()
+                    polished = _llm_generate(self._gemini, prompt)
+                    if polished:
+                        answer_text = polished
             except Exception:
                 pass
 

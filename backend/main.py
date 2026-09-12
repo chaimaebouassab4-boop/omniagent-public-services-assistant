@@ -47,7 +47,7 @@ async def diag() -> dict:
     import os
     return {
         "status": "online",
-        "version": "2026-09-12-resilient-rag",
+        "version": "2026-09-12-zero-llamaindex",
         "llm_provider": os.getenv("LLM_PROVIDER"),
         "gemini_model": os.getenv("GEMINI_MODEL"),
         "google_key_len": len(os.getenv("GOOGLE_API_KEY", "")),
