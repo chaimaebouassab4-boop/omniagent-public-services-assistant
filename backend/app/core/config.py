@@ -54,5 +54,9 @@ class Settings(BaseSettings):
     gemini_model: str = Field(default="gemini-3.6-flash", description="Gemini model name")
     embedding_model: str = Field(default="BAAI/bge-m3", description="HuggingFace embedding model name")
 
+    # ── Audio / Voice ──
+    gemini_audio_model: str = Field(default="gemini-3.6-flash", description="Gemini model for audio transcription")
+    max_audio_upload_bytes: int = Field(default=25 * 1024 * 1024, description="Max audio upload size in bytes (25 MB)")
+
 
 settings = Settings()
