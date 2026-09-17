@@ -22,3 +22,5 @@ old fr/
 .env
 backend/.env
 *.log
+.chroma_build*
+
