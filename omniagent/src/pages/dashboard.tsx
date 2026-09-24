@@ -7,24 +7,27 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { FileText, Clock, CheckCircle, AlertCircle, ArrowRight, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CASE_LABELS, canonicalCaseStatus } from "@/lib/case-lifecycle";
 
 export function StatusBadge({ status }: { status: string }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const canonical = canonicalCaseStatus(status);
   
   let variant: "default" | "secondary" | "destructive" | "outline" = "default";
   let bgClass = "";
   
-  switch(status) {
-    case "approved": variant = "default"; bgClass = "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border-emerald-200 dark:border-emerald-800"; break;
+  switch(canonical ?? status) {
+    case "DOCS_APPROVED":
+    case "READY_FOR_PICKUP": variant = "default"; bgClass = "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border-emerald-200 dark:border-emerald-800"; break;
     case "rejected": variant = "destructive"; bgClass = "bg-red-500/10 text-red-600 hover:bg-red-500/20 border-red-200 dark:border-red-800"; break;
-    case "in_review": variant = "secondary"; bgClass = "bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 border-blue-200 dark:border-blue-800"; break;
-    case "pending_documents": variant = "outline"; bgClass = "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 border-amber-200 dark:border-amber-800"; break;
+    case "UNDER_REVIEW": variant = "secondary"; bgClass = "bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 border-blue-200 dark:border-blue-800"; break;
+    case "DRAFT": variant = "outline"; bgClass = "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 border-amber-200 dark:border-amber-800"; break;
     default: variant = "outline"; bgClass = "bg-gray-500/10 text-gray-600 hover:bg-gray-500/20 border-gray-200 dark:border-gray-800"; break;
   }
 
   return (
     <Badge variant={variant} className={`${bgClass} border`}>
-      {t(`status.${status}`)}
+      {canonical ? CASE_LABELS[canonical][language === "fr" ? "fr" : "ar"] : t(`status.${status}`)}
     </Badge>
   );
 }

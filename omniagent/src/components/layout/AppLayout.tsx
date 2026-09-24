@@ -25,14 +25,19 @@ import {
   Clock,
   AlertCircle,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  History,
+  Loader2,
+  PlayCircle,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredUser, getToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-url";
+import { activateDemoPersona } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 
 type NotificationItem = {
   id: string;
@@ -63,8 +68,12 @@ function formatTimeAgo(isoString: string | null, language: string) {
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
-  const { t, language, isRtl } = useI18n();
+  const { t, language, setLanguage, isRtl } = useI18n();
   const [openNotifs, setOpenNotifs] = useState(false);
+  const [demoPersona, setDemoPersona] = useState("");
+  const [demoLoading, setDemoLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const currentUser = getStoredUser();
   const isAdmin = !!currentUser?.isAdmin;
 
@@ -87,11 +96,38 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const pendingCount = notifData?.pendingCount ?? 0;
   const notifications = notifData?.notifications ?? [];
 
+  const launchDemo = async (value: string) => {
+    if (!value) return;
+    const persona = value as "amine" | "fatima" | "youssef";
+    setDemoPersona(value);
+    setDemoLoading(true);
+    try {
+      const result = await activateDemoPersona(persona);
+      setLanguage(result.persona.language);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin"] }),
+        queryClient.invalidateQueries({ queryKey: ["cases"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+      ]);
+      setLocation(`/cases/${result.case.id}`);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Mode démo indisponible" : "تعذر تشغيل العرض",
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setDemoLoading(false);
+      setDemoPersona("");
+    }
+  };
+
   const navigation = [
     { name: t("nav.home"), href: "/", icon: Home },
     { name: t("nav.dashboard"), href: "/dashboard", icon: FileText },
+    { name: t("nav.history"), href: "/history", icon: History },
     { name: t("nav.services"), href: "/services", icon: Briefcase },
-    { name: t("nav.chat"), href: "/chat", icon: MessageSquare },
+    ...(!isAdmin ? [{ name: t("nav.chat"), href: "/chat", icon: MessageSquare }] : []),
     { 
       name: t("nav.admin"), 
       href: "/admin", 
@@ -270,6 +306,30 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <ThemeToggle />
             </div>
           </div>
+          {isAdmin && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-primary/15 bg-primary/5 px-4 py-2.5 md:px-10">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <PlayCircle className="h-4 w-4 text-primary" />
+                <span>{language === "fr" ? "Mode présentation" : "وضع العرض"}</span>
+                <Badge variant="outline" className="hidden border-primary/30 bg-background text-[10px] sm:inline-flex">DEMO</Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                {demoLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                <select
+                  aria-label={language === "fr" ? "Choisir un scénario de démonstration" : "اختيار سيناريو العرض"}
+                  value={demoPersona}
+                  disabled={demoLoading}
+                  onChange={(event) => void launchDemo(event.target.value)}
+                  className="h-9 max-w-[340px] rounded-md border border-input bg-background px-3 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">{language === "fr" ? "Choisir une persona…" : "اختار شخصية…"}</option>
+                  <option value="amine">Demo 1: Amine — Darija · Certificat de résidence</option>
+                  <option value="fatima">Demo 2: Fatima — Français · Acte de naissance</option>
+                  <option value="youssef">Demo 3: Youssef — Rejet · Document illisible</option>
+                </select>
+              </div>
+            </div>
+          )}
           <div className="p-6 md:p-10 flex-1 overflow-auto">
             {children}
           </div>

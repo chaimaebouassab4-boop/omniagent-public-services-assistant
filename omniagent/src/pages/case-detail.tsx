@@ -8,6 +8,8 @@ import {
   useListDocuments,
   getListMessagesQueryKey,
   getListDocumentsQueryKey,
+  useSubmitCase,
+  downloadCaseReceipt,
 } from "@workspace/api-client-react";
 import { useParams } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +25,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { uploadDocument, validateFile, fetchCaseDocPreview, deleteCaseDocument } from "@/lib/documents";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
+import { CaseProgressTimeline } from "@/components/cases/CaseProgressTimeline";
+import { canonicalCaseStatus } from "@/lib/case-lifecycle";
+import { getStoredUser } from "@/lib/auth";
+import { AdminCopilotCard } from "@/components/admin/AdminCopilotCard";
 import {
   Dialog,
   DialogContent,
@@ -41,11 +47,13 @@ export default function CaseDetail() {
   const { id } = useParams();
   const caseId = parseInt(id || "0", 10);
   const { t, language, isRtl } = useI18n();
+  const isAdmin = !!getStoredUser()?.isAdmin;
   const { data: caseData, isLoading: caseLoading } = useGetCase(caseId, { query: { enabled: !!caseId, queryKey: ['case', caseId] as any } });
   const { data: timeline } = useGetCaseTimeline(caseId, { query: { enabled: !!caseId, queryKey: ['case-timeline', caseId] as any } });
-  const { data: messages } = useListMessages(caseId, { query: { enabled: !!caseId, queryKey: getListMessagesQueryKey(caseId) as any } });
+  const { data: messages } = useListMessages(caseId, { query: { enabled: !!caseId && !isAdmin, queryKey: getListMessagesQueryKey(caseId) as any } });
   const { data: documents } = useListDocuments(caseId, { query: { enabled: !!caseId, queryKey: getListDocumentsQueryKey(caseId) as any } });
   const sendMessage = useSendMessage();
+  const submitCase = useSubmitCase();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -55,8 +63,36 @@ export default function CaseDetail() {
   const [previewLoadingId, setPreviewLoadingId] = useState<number | string | null>(null);
   const [docToDelete, setDocToDelete] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDownloadingReceipt, setIsDownloadingReceipt] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleReceipt = async () => {
+    setIsDownloadingReceipt(true);
+    try {
+      await downloadCaseReceipt(caseId, caseData?.trackingCode);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Reçu indisponible" : "تعذر تحميل الوصل",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setIsDownloadingReceipt(false);
+    }
+  };
+
+  const handleSubmitDraft = () => {
+    submitCase.mutate(caseId, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["case", caseId] });
+        queryClient.invalidateQueries({ queryKey: ["case-timeline", caseId] });
+        queryClient.invalidateQueries({ queryKey: ["cases"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      },
+      onError: (err) => toast({ variant: "destructive", title: language === "fr" ? "Envoi impossible" : "تعذر إرسال الطلب", description: err.message }),
+    });
+  };
 
   const handleViewDoc = async (doc: any) => {
     setPreviewLoadingId(doc.id);
@@ -108,6 +144,7 @@ export default function CaseDetail() {
       setDocToDelete(null);
       queryClient.invalidateQueries({ queryKey: getListDocumentsQueryKey(caseId) });
       queryClient.invalidateQueries({ queryKey: ['case-timeline', caseId] });
+      queryClient.invalidateQueries({ queryKey: ['case', caseId] });
     } catch (err) {
       toast({
         variant: "destructive",
@@ -184,31 +221,43 @@ export default function CaseDetail() {
 
   return (
     <AppLayout>
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={`max-w-6xl mx-auto grid grid-cols-1 gap-6 ${isAdmin ? "" : "lg:grid-cols-3"}`}>
         
         {/* Left Column: Case Info & Chat */}
-        <div className="lg:col-span-2 space-y-6 flex flex-col h-[calc(100vh-120px)]">
+        <div className={`space-y-6 flex flex-col ${isAdmin ? "" : "lg:col-span-2 h-[calc(100vh-120px)]"}`}>
           {/* Header */}
           <Card className="shrink-0">
             <CardContent className="p-6">
               {caseLoading ? (
                 <div className="space-y-2"><Skeleton className="h-6 w-1/3" /><Skeleton className="h-4 w-1/4" /></div>
               ) : (
-                <div className="flex justify-between items-start">
+                <div className="flex flex-wrap justify-between items-start gap-3">
                   <div>
                     <h1 className="text-2xl font-bold mb-1">
                       {language === "fr" ? caseData?.service?.nameFr : caseData?.service?.nameAr}
                     </h1>
-                    <div className="text-sm text-muted-foreground">Ref: {caseData?.referenceNumber}</div>
+                    <div className="text-sm text-muted-foreground">{language === "fr" ? "Suivi" : "رمز التتبع"}: {caseData?.trackingCode ?? caseData?.referenceNumber}</div>
                   </div>
-                  <StatusBadge status={caseData?.status || ""} />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={caseData?.status || ""} />
+                    {caseData && canonicalCaseStatus(caseData.status) === "DRAFT" ? (
+                      <Button size="sm" onClick={handleSubmitDraft} disabled={submitCase.isPending}>
+                        {submitCase.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : (language === "fr" ? "Soumettre" : "إرسال الطلب")}
+                      </Button>
+                    ) : caseData ? (
+                      <Button size="sm" variant="outline" onClick={() => void handleReceipt()} disabled={isDownloadingReceipt} className="gap-2">
+                        {isDownloadingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                        {language === "fr" ? "Reçu PDF" : "تحميل الوصل"}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* AI Chat Panel */}
-          <Card className="flex-1 flex flex-col min-h-0 overflow-hidden border-primary/20 shadow-md">
+          {/* Citizen assistant: intentionally hidden for civil-servant accounts. */}
+          {!isAdmin && <Card className="flex-1 flex flex-col min-h-0 overflow-hidden border-primary/20 shadow-md">
             <CardHeader className="py-3 px-4 border-b bg-muted/30 shrink-0">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Bot className="w-5 h-5 text-primary" />
@@ -287,11 +336,16 @@ export default function CaseDetail() {
                 </form>
               </div>
             </CardContent>
-          </Card>
+          </Card>}
         </div>
 
         {/* Right Column: Timeline & Checklist */}
-        <div className="space-y-6">
+        <div className={isAdmin ? "grid items-start gap-6 lg:grid-cols-2" : "space-y-6"}>
+          {isAdmin && caseId > 0 && <AdminCopilotCard caseId={caseId} />}
+          {caseData && <Card>
+            <CardHeader><CardTitle className="text-base">{language === "fr" ? "Suivi du dossier" : "تتبع الطلب"}</CardTitle></CardHeader>
+            <CardContent><CaseProgressTimeline caseData={caseData} /></CardContent>
+          </Card>}
           {/* Hidden file input shared by the upload buttons */}
           <input
             ref={fileInputRef}

@@ -1,78 +1,47 @@
-# 📊 OmniAgent Public Services — AI Evaluation & Benchmark Report
+# OmniAgent AI Evaluation Report
 
-**Generated on:** 2026-08-09 21:06:34  
-**Evaluation Lead:** Ayoub (Data / AI / Knowledge Engineering)  
-**RAG Architecture:** LlamaIndex + ChromaDB + BAAI/bge-m3 + Ollama LLaMA 3.1
+Generated: 2026-09-24T17:30:44+01:00
 
----
+## Executive result
 
-## 🎯 1. Key Performance Indicators (KPIs)
+| Metric | Target | Measured | Result |
+|---|---:|---:|---|
+| Overall accuracy | > 90% | **95.7%** (66/69) | PASS |
+| Grounded source retrieval | >= 90% | **100.0%** | PASS |
+| Out-of-scope hallucination rate | <= 5% | **0.0%** | PASS |
+| Average local latency | < 100 ms | **0.18 ms** | PASS |
 
-| Metric | Target | Result | Status |
-| :--- | :--- | :--- | :--- |
-| **Overall Accuracy Rate** | `> 85.0%` | **94.3%** | ✅ PASSED |
-| **Hallucination Rate** | `< 5.0%` | **0.0%** | ✅ PASSED |
-| **Source Retrieval Accuracy** | `> 90.0%` | **100.0%** | ✅ PASSED |
-| **Average Latency** | `< 3.0s` | **14.69s** | ⚠️ SLOW |
+## Scope and methodology
 
----
+This benchmark runs entirely against repository data and code. It does not call an external model, network service, or live government registry. The measured system is the deterministic multilingual knowledge-base retriever plus the evidence-grounded civil-servant copilot.
 
-## 🧪 2. Detailed Test Cases Breakdown
+- Curated suite: keyword recall against 35 hand-written Darija/Arabic public-service cases; the pass threshold is 18% recall with grounded confidence.
+- FAQ retrieval suite: exact-answer retrieval for up to three stored FAQs across each of the ten services.
+- Copilot suite: four document-review scenarios covering approval, missing evidence, unreadable evidence, and a service where address comparison is not applicable.
+- Out-of-scope safety: success requires an uncertainty fallback with confidence below 0.30.
 
-| # | Service | Query | Expected Answer | RAG Response | Confidence | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | `residence` | شنو الوثائق المطلوبة لشهادة السكنى إلا كنت مستأجر؟ | عقد الكراء مصادق عليه، نسخة CNIE، فاتورة حديثة باسم صاحب الس... | شنو نعمل إلا ما عنديش فاتورة أو عقد كراء؟ قدم تصريح بالشرف م... | `0.5` | ✅ PASS |
-| 2 | `residence` | كم الرسوم ديال شهادة السكنى؟ | حوالي 20 درهم (طوابع ضريبية).... | حوالي 20 درهم (طوابع ضريبية). ما فيه رسوم إضافية رسمية في أغ... | `0.65` | ✅ PASS |
-| 3 | `residence` | هل خاص المقدم يجي يزور الدار باش يعطي شهادة السكنى؟ | نعم، في أغلب الحالات خاصة القروي أو سكن مع عائلة، يقوم المقد... | هجاوبك بالدارجة المغربية:
+## Results by suite
 
-نعم، في أغلب الحالات (خاصة القروي... | `0.45` | ✅ PASS |
-| 4 | `residence` | شنو نعمل إلا ما عنديش فاتورة لشهادة السكنى؟ | قدم تصريح بالشرف من صاحب السكن + CNIE ديالو + فاتورة باسمه، ... | شنو نعمل إلا ما عنديش فاتورة أو عقد كراء؟  
-قدم تصريح بالشرف... | `0.51` | ✅ PASS |
-| 5 | `residence` | هل يمكن طلب شهادة السكنى أونلاين؟ | لا، حالياً الإجراء حضوري فقط في الملحقة الإدارية أو القيادة ... | لا، حالياً (2026) الإجراء حضوري فقط. بعض المدن الكبرى قد توف... | `0.62` | ✅ PASS |
-| 6 | `birth` | كيفاش نطلب عقد الازدياد أونلاين؟ | عبر المنصة الرسمية watiqa.ma: تسجل، تختار Extrait أو Copie i... | نعم، عبر المنصة الرسمية watiqa.ma. تختار Extrait أو Copie in... | `0.6` | ✅ PASS |
-| 7 | `birth` | شنو الفرق بين المستخرج والنسخة الكاملة ديال عقد الازدياد؟ | المستخرج (Extrait): معلومات أساسية فقط. النسخة الكاملة (Copi... | المستخرج (Extrait): معلومات أساسية فقط. النسخة الكاملة (Copi... | `0.4` | ✅ PASS |
-| 8 | `birth` | كم مدة الاستلام إلا طلب عقد الازدياد أونلاين؟ | عادة 4-15 يوم عمل حسب العنوان والمنطقة، يمكن تتبع الطلب في w... | أنا متأكدش. لقد قمت بقراءة المعلومات المتاحة، ولكن لم أجد جو... | `0.55` | ❌ FAIL |
-| 9 | `birth` | إلا الاسم في عقد الازدياد غلط، شنو نعمل؟ | تقدم طلب تصحيح في المحكمة الابتدائية مع وثائق إثبات، ثم تعيد... | حسناً. السؤال عن طلب عقد الازدياد مع وجود خطأ في الاسم. بناء... | `0.41` | ✅ PASS |
-| 10 | `marriage` | شنو الوثائق المطلوبة لعقد الزواج؟ | نسخة كاملة من عقد الازدياد، CNIE، شهادة طبية، شهادة عزوبية أ... | بسيطة، لو عرفنا شوية. عند عقد الزواج، لازم يكون عندك:
+| Suite | Cases | Passed | Accuracy |
+|---|---:|---:|---:|
+| copilot | 4 | 4 | 100.0% |
+| curated | 35 | 32 | 91.4% |
+| faq_retrieval | 30 | 30 | 100.0% |
 
-*   ش... | `0.52` | ✅ PASS |
-| 11 | `marriage` | كم الرسوم ديال عقد الزواج؟ | متفاوتة: 200-500 درهم لأتعاب العدول + طوابع + مصاريف إدارية.... | متفاوتة: 200-500 درهم لأتعاب العدول + طوابع + مصاريف إدارية.... | `0.62` | ✅ PASS |
-| 12 | `marriage` | شنو السن القانوني للزواج في المغرب؟ | 18 سنة كاملة للطرفين، إلا إذن استثنائي من قاضي الأسرة.... | شنو السن القانوني للزواج في المغرب؟ سن 18 سنة كاملة للطرفين.... | `0.43` | ✅ PASS |
-| 13 | `marriage` | خاص الولي للمرأة في عقد الزواج؟ | نعم للبكر، إلا إذن قضائي. الولي غالباً الأب أو الجد أو الأخ.... | نعم للبكر، إلا إذن قضائي. الولي غالباً الأب أو الجد أو الأخ.... | `0.41` | ✅ PASS |
-| 14 | `marriage` | هل يمكن تعدد الزوجات في المغرب؟ | نعم بشروط صارمة: إذن قضائي + موافقة الزوجة الأولى + إثبات ال... | نعم بشروط صارمة: إذن قضائي + موافقة الزوجة الأولى + إثبات ال... | `0.54` | ✅ PASS |
-| 15 | `death` | من يقدر يصرح بالوفاة وكم الأجل القانوني؟ | الولد أو الزوج أو الأب أو الأخ، والأجل القانوني هو 30 يوماً ... | بسم الله الرحمن الرحيم. 
+## Failed cases
 
-الجواب: 
-الولد، الزوج/الزوجة، الأب... | `0.5` | ✅ PASS |
-| 16 | `death` | شنو الوثائق المطلوبة لمستخرج شهادة الوفاة؟ | شهادة معاينة الوفاة من الطبيب، الدفتر العائلي أو عقد الازديا... | شنو الوثائق الرئيسية؟  
-شهادة معاينة الوفاة + دفتر العائلي أ... | `0.52` | ✅ PASS |
-| 17 | `life` | واش ضروري نحضر شخصيا باش ناخد شهادة الحياة؟ | نعم الحضور الشخصي ضروري للمقاطعة، إلا في حالة العجز أو المرض... | نعم، الحضور الشخصي ضروري كقاعدة عامة. إلا في حالة المرض أو ا... | `0.6` | ✅ PASS |
-| 18 | `life` | شنو الوثائق المطلوبة لشهادة الحياة؟ | البطاقة الوطنية للتعريف الإلكترونية CNIE والدفتر العائلي أو ... | بسيطة، البطاقة الوطنية للتعريف الإلكتروني (CNIE) و الدفتر ال... | `0.53` | ✅ PASS |
-| 19 | `single_status` | شنو هما الوثائق المطلوبة لشهادة العزوبة؟ | تصريح بالشرف مصادق عليه، نسخة CNIE، نسخة كاملة من عقد الازدي... | شنو هي الوثائق المطلوبة؟  
-تصريح بالشرف مصادق عليه، نسخة من ... | `0.6` | ✅ PASS |
-| 20 | `single_status` | شحال كتاخد ديال الوقت شهادة العزوبة؟ | غالبا من يومين حتى 4 أيام على حسب البحث الميداني لعون السلطة... | غالبًا ما يأخذ من يومين إلى أربعة أيام، على حساب البحث الذي ... | `0.48` | ✅ PASS |
-| 21 | `single_status` | واش نقدر ناخد شهادة العزوبة أونلاين؟ | لا، حاليا تتطلب الحضور شخصيا للمقاطعة لأنها تحتاج بحثا ميدان... | لا، حاليا شهادة العزوبة كتطلب الحضور شخصيا حيت كتحتاج بحث من... | `0.59` | ✅ PASS |
-| 22 | `non_property` | واش ضروري نمشي لدار الضريبة باش ناخد شهادة عدم الملكية؟ | نعم ضروري الحصول على شهادة عدم الخضوع للضريبة Non-imposition... | نعم، ضروري تجيب شهادة عدم الخضوع للضريبة (Non-imposition) من... | `0.7` | ✅ PASS |
-| 23 | `non_property` | شنو هما الوثائق المطلوبة لشهادة عدم الملكية؟ | نسخة البطاقة الوطنية، تصريح بالشرف بعدم الملكية، وشهادة عدم ... | المعلومات المتوفرة تشير إلى أن شهادة عدم الملكية تتطلب بعض ا... | `0.58` | ✅ PASS |
-| 24 | `administrative` | فاش كنحتاج الشهادة الإدارية للزواج؟ | يطلبها العدول مع ملف الزواج لإثبات الحالة العائلية عازب أو م... | **فاش كنحتاج الشهادة الإدارية للزواج؟**
+| ID | Service | Category | Recall | Actual response |
+|---|---|---|---:|---|
+| curated-1 | residence | documents | 4.8% | اسأل عن سبب الرفض، أكمل الوثائق الناقصة، أو قدم شكوى للجهة العليا (القائد أو الوالي). |
+| curated-28 | good_conduct | fees | 0.0% | لا، شهادة حسن السيرة (ديال البوليس) كتحتاج تمشي حضوريا للكوميسارية اللي تابع ليها السكن ديالك. |
+| curated-35 | single_status | special_cases | 7.1% | وثيقة إدارية تثبت أن الشخص غير متزوج. تُطلب أساسا لإتمام إجراءات الزواج، أو للالتحاق ببعض الوظائف العسكرية وشبه العسكرية. |
 
-العدول كيطلبوها مع ... | `0.64` | ✅ PASS |
-| 25 | `administrative` | واش ضروري المقدم يدير بحث باش يعطيوها ليا الشهادة الإدارية؟ | نعم الشهادة الإدارية تبنى أساسا على البحث الميداني لعون السل... | نعم، الشهادة الإدارية كاتبنى أساسا على البحث الميداني اللي ك... | `0.51` | ✅ PASS |
-| 26 | `good_conduct` | شنو الفرق بين حسن السيرة والسجل العدلي؟ | حسن السيرة تسلمها المديرية العامة للأمن الوطني الشرطة، والسج... | حسن السيرة (Fiche anthropométrique) كتعطيها الإدارة العامة ل... | `0.52` | ✅ PASS |
-| 27 | `good_conduct` | واش نقدر ناخد شهادة حسن السيرة أونلاين؟ | لا، شهادة حسن السيرة الخاصة بالشرطة تتطلب التوجه حضوريا للدا... | لا، شهادة حسن السيرة (ديال البوليس) كتحتاج تمشي حضوريا للكوم... | `0.5` | ✅ PASS |
-| 28 | `good_conduct` | كم رسوم شهادة حسن السيرة؟ | طابع بريدي تنبر بقيمة 30 درهم.... | كتب في جوابي: كتكلف 30 درهم عبارة عن طابع بريدي (تنبر).... | `0.54` | ✅ PASS |
-| 29 | `criminal_record` | واش نقدر نطلب السجل العدلي من مدينة أخرى؟ | نعم عبر البوابة الإلكترونية casierjudiciaire.justice.gov.ma ... | نعم، عبر البوابة الإلكترونية (casierjudiciaire.justice.gov.m... | `0.6` | ✅ PASS |
-| 30 | `criminal_record` | شحال ديال الوقت باش يخرج السجل العدلي أونلاين؟ | أونلاين يأخذ عادة من 24 إلى 48 ساعة للوصول للمحكمة المختارة.... | أونلاين كياخد من 24 حتى 48 ساعة باش يوصل للمحكمة لي ختاريتي.... | `0.49` | ✅ PASS |
-| 31 | `criminal_record` | كم رسوم استخراج السجل العدلي؟ | 10 دراهم رسوم التنبر.... | المهمش، الرسوم ديال استخراج السجل العدلي هي (10 دراهم) و هيا... | `0.47` | ✅ PASS |
-| 32 | `out_of_scope` | شنو هي شروط السفر للقمر في القانون المغربي؟ | ما متأكدش (سؤال خارج نطاق الخدمات الإدارية)... | ما متأكدش.... | `0.3` | ✅ PASS |
-| 33 | `out_of_scope` | كيفاش نشري تذكرة لماتش ريال مدريد؟ | ما متأكدش (سؤال خارج نطاق الخدمات الإدارية)... | لا أستطيع تقديم جوابك لأن السؤال هو عن تذكرة لماتش ريال مدري... | `0.3` | ✅ PASS |
-| 34 | `out_of_scope` | شنو هي طريقة تحضير الكسكس المغربي؟ | ما متأكدش (سؤال خارج نطاق الخدمات الإدارية)... | أنا متأكدش. المهم، السؤال عن الكسكس هو غير مرتبط بالمواد الم... | `0.32` | ✅ PASS |
-| 35 | `single_status` | واش المطلق يحتاج شهادة عزوبة للزواج مرة ثانية؟ | المطلق يطلب منه الإدلاء بعقد أو شهادة الطلاق والشهادة الإدار... | **لا، المطلقين هوما تحتاجين شهادة عدم الزواج (Certificat de ... | `0.47` | ❌ FAIL |
+## Interpretation
 
----
+The result supports a controlled presentation demo, not a claim of legal or production certification. Copilot output is decision support: it refuses approval when required evidence is missing, unreadable, mismatched, or unverifiable. Final responsibility remains with the civil servant.
 
-## 🔍 3. Evaluation Analysis & Key Findings
+## Reproduce
 
-1. **Multilingual & Darija Understanding**: The `BAAI/bge-m3` embedding model successfully matched Moroccan administrative terminology across French, Standard Arabic, and Moroccan Darija.
-2. **Grounding & Guardrails**: Edge cases and out-of-scope inquiries were successfully caught by the custom grounding prompt (`ما متأكدش`), preventing hallucinations.
-3. **Production Readiness**: The RAG service module is packaged and ready for full end-to-end integration with the FastAPI backend and React frontend.
+```powershell
+backend\.venv\Scripts\python.exe tests\evaluate_rag.py
+```

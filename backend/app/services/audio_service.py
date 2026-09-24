@@ -15,7 +15,10 @@ import logging
 import re
 from typing import Any
 
-import google.generativeai as genai  # type: ignore
+try:
+    import google.generativeai as genai  # type: ignore
+except ImportError:
+    genai = None
 
 from app.core.config import settings
 
@@ -108,6 +111,14 @@ def transcribe_audio(
             "language": language_hint,
             "confidence": 0.0,
             "error": "Empty audio file.",
+        }
+
+    if genai is None:
+        return {
+            "text": "",
+            "language": language_hint,
+            "confidence": 0.0,
+            "error": "google-generativeai package is not installed on the server.",
         }
 
     api_key = settings.google_api_key

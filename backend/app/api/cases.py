@@ -4,18 +4,23 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.core.config import settings
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models import AuditLog, Case, ChatMessage, Document, Service, User
 from app.services.knowledge_base import answer_with_metadata, normalize_service_id
+from app.services.case_lifecycle import canonical_status, next_status, tracking_code, validate_transition
+from app.services.case_notifications import notification_draft
+from app.services.mock_citizens import verify_mock_profile
 
 router = APIRouter(prefix="/api", tags=["cases"])
 
 
 class CreateCaseRequest(BaseModel):
     service_id: str = Field(..., examples=["residence_certificate"])
+    submit: bool = True
 
 
 class ChatRequest(BaseModel):
@@ -27,6 +32,10 @@ class ChatRequest(BaseModel):
 
 class RejectRequest(BaseModel):
     reason: str
+
+
+class UpdateCaseStatusRequest(BaseModel):
+    status: str
 
 
 class VerifyRequest(BaseModel):
@@ -107,7 +116,16 @@ async def create_case(
     if service is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
 
-    new_case = Case(user_id=current_user.id, service_id=request.service_id, status="submitted")
+    public_id = (db.query(func.max(Case.public_id)).scalar() or 0) + 1
+    created_at = datetime.utcnow()
+    new_case = Case(
+        public_id=public_id,
+        reference_number=tracking_code(public_id, created_at),
+        user_id=current_user.id,
+        service_id=request.service_id,
+        status="DRAFT",
+        created_at=created_at,
+    )
     db.add(new_case)
     db.flush()
     log_case_action(
@@ -115,8 +133,14 @@ async def create_case(
         case_id=new_case.id,
         action="created",
         actor_id=current_user.id,
-        details={"service_id": request.service_id}
+        details={"service_id": request.service_id, "status": "DRAFT"}
     )
+    if request.submit:
+        new_case.status = validate_transition(new_case.status, "SUBMITTED", is_admin=False)
+        log_case_action(db, new_case.id, "status_changed", current_user.id, {
+            "status": new_case.status,
+            "notification": notification_draft(new_case.status, new_case.reference_number),
+        })
     db.commit()
     db.refresh(new_case)
     return {
@@ -345,6 +369,34 @@ async def get_all_cases(
     }
 
 
+@router.patch("/admin/cases/{case_id}/status")
+async def update_case_status(
+    case_id: str,
+    request: UpdateCaseStatusRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Advance a case by exactly one canonical lifecycle step."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if case is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    previous = canonical_status(case.status)
+    try:
+        case.status = validate_transition(case.status, request.status, is_admin=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    case.updated_at = datetime.utcnow()
+    log_case_action(db, case.id, "status_changed", current_user.id, {
+        "fromStatus": previous,
+        "status": case.status,
+        "notification": notification_draft(case.status, case.reference_number),
+    })
+    db.commit()
+    return {"status": "success", "data": {"case_id": case.id, "status": case.status}}
+
+
 @router.post("/admin/approve/{case_id}")
 async def approve_case(
     case_id: str,
@@ -359,7 +411,13 @@ async def approve_case(
     if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
 
-    case.status = "approved"
+    target = next_status(case.status)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Case is already at its final state")
+    try:
+        case.status = validate_transition(case.status, target, is_admin=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     case.updated_at = datetime.utcnow()
     log_case_action(db=db, case_id=case.id, action="approved", actor_id=current_user.id, details={})
     db.commit()
@@ -381,14 +439,18 @@ async def reject_case(
     if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
 
-    case.status = "rejected"
+    if canonical_status(case.status) != "UNDER_REVIEW":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Documents can only be requested during review")
     case.updated_at = datetime.utcnow()
     log_case_action(
         db=db,
         case_id=case.id,
-        action="rejected",
+        action="action_required",
         actor_id=current_user.id,
-        details={"reason": request.reason}
+        details={
+            "nextAction": request.reason,
+            "notification": notification_draft(case.status, case.reference_number, missing_document=request.reason),
+        }
     )
     db.commit()
     return {
@@ -400,7 +462,7 @@ async def reject_case(
 @router.post("/verify/cin")
 async def verify_cin(request: VerifyRequest) -> dict:
     """Mock CIN verification endpoint."""
-    return {"status": "success", "data": {"cin": request.value, "valid": True, "name": "Mock Citizen"}}
+    return {"status": "success", "data": {"cin": request.value, **verify_mock_profile("cin", request.value)}}
 
 
 @router.post("/verify/cnss")
@@ -408,7 +470,7 @@ async def verify_cnss(request: VerifyRequest) -> dict:
     """Mock CNSS verification endpoint."""
     return {
         "status": "success",
-        "data": {"cnss": request.value, "valid": True, "name": "Mock Citizen"}
+        "data": {"cnss": request.value, **verify_mock_profile("cnss_number", request.value)}
     }
 
 

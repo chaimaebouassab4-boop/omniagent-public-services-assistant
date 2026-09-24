@@ -1,0 +1,42 @@
+[
+  {
+    "full_name": "Salma Bennani",
+    "cin": "BK654321",
+    "phone": "+212612345678",
+    "address": "18, Rue Al Massira, Maarif",
+    "city": "Casablanca",
+    "cnss_number": "123456789",
+    "cnss_status": "active",
+    "synthetic": true
+  },
+  {
+    "full_name": "Mehdi El Amrani",
+    "cin": "AB482731",
+    "phone": "+212698765432",
+    "address": "32, Avenue Fal Ould Oumeir, Agdal",
+    "city": "Rabat",
+    "cnss_number": "246813579",
+    "cnss_status": "inactive",
+    "synthetic": true
+  },
+  {
+    "full_name": "Amina Idrissi",
+    "cin": "BE739204",
+    "phone": "+212665443322",
+    "address": "7, Boulevard Zerktouni, Bourgogne",
+    "city": "Casablanca",
+    "cnss_number": "975318642",
+    "cnss_status": "not_registered",
+    "synthetic": true
+  },
+  {
+    "full_name": "Youssef Tazi",
+    "cin": "JB932184",
+    "phone": "+212677889900",
+    "address": "54, Rue Oued Moulouya, Hassan",
+    "city": "Rabat",
+    "cnss_number": "864209753",
+    "cnss_status": "active",
+    "synthetic": true
+  }
+]

@@ -102,7 +102,7 @@ def test_admin_can_update_case_through_frontend_contract(client, admin_headers):
     updated = client.patch(
         f"/api/admin/cases/{case_id}",
         headers=admin_headers,
-        json={"status": "approved"},
+        json={"status": "UNDER_REVIEW"},
     )
     assert updated.status_code == 200
-    assert updated.json()["status"] == "approved"
+    assert updated.json()["status"] == "UNDER_REVIEW"

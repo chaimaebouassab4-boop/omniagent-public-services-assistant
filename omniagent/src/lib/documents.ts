@@ -157,3 +157,42 @@ export async function deletePersonalDocument(docId: string): Promise<AuthUser> {
   }
   return response.json();
 }
+
+/** Structured document metadata returned by Feature 2 Smart OCR & Anomaly Detection. */
+export interface ExtractedDocumentMetadata {
+  document_type: string;
+  document_type_label: {
+    fr: string;
+    ar: string;
+    darija: string;
+  };
+  cin_number?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  birth_date?: string | null;
+  address?: string | null;
+  expiry_date?: string | null;
+  issuing_authority?: string | null;
+  confidence_score: number;
+  is_valid: boolean;
+  is_expired: boolean;
+  is_blurry: boolean;
+  is_relevant: boolean;
+  warnings: string[];
+  anomalies?: string[];
+  raw_extracted_text?: string;
+  ocr_used?: boolean;
+  page_count?: number;
+}
+
+/** Sends a document to Feature 2 OCR + Anomaly detection endpoint for structured entity extraction. */
+export async function analyzeAndExtractDocument(
+  file: File,
+  language = "darija",
+): Promise<ExtractedDocumentMetadata> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("language", language);
+  return postMultipart<ExtractedDocumentMetadata>("/api/documents/analyze-extract", formData);
+}

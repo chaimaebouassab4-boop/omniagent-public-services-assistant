@@ -308,9 +308,9 @@ def test_admin_login_wrong_password(client):
 def test_create_and_get_case(client):
     case = create_case(client)
     assert isinstance(case["id"], int)
-    assert case["referenceNumber"].startswith("OMN-")
+    assert case["referenceNumber"].startswith("MA-")
     assert case["serviceId"] == 1
-    assert case["status"] == "submitted"
+    assert case["status"] == "SUBMITTED"
     assert case["service"]["id"] == 1
 
     fetched = client.get(f"/api/cases/{case['id']}")
@@ -335,21 +335,18 @@ def test_list_cases(client):
     assert all(isinstance(c["id"], int) for c in cases)
 
 
-def test_patch_case_status(client):
+def test_citizen_cannot_advance_case_review(client):
     case = create_case(client)
     response = client.patch(
         f"/api/cases/{case['id']}",
-        json={"status": "in_review", "notes": "under review"},
+        json={"status": "UNDER_REVIEW", "notes": "under review"},
     )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "in_review"
-    assert body["notes"] == "under review"
+    assert response.status_code == 403
 
 
-def test_case_timeline(client):
+def test_case_timeline(client, admin_headers):
     case = create_case(client)
-    client.patch(f"/api/cases/{case['id']}", json={"status": "approved"})
+    client.patch(f"/api/admin/cases/{case['id']}", headers=admin_headers, json={"status": "UNDER_REVIEW"})
     response = client.get(f"/api/cases/{case['id']}/timeline")
     assert response.status_code == 200
     events = response.json()

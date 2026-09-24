@@ -11,16 +11,22 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.agents import evaluate_case
 from app.core.config import settings
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models import AuditLog, Case, ChatMessage, Document, Service, User, VisitEvent
 from app.services.knowledge_base import answer_with_metadata, normalize_service_id
+from app.services.case_lifecycle import NEXT_ACTIONS, canonical_status, tracking_code, validate_transition
+from app.services.case_notifications import notification_draft
+from app.services.case_receipt import render_case_receipt
+from app.services.demo_personas import prepare_demo_persona
+from app.services.mock_citizens import verify_mock_profile
 
 router = APIRouter(prefix="/api", tags=["omni"])
 
@@ -75,11 +81,13 @@ class CreateCaseBody(BaseModel):
     applicantEmail: str
     applicantPhone: str | None = None
     notes: str | None = None
+    submit: bool = True
 
 
 class UpdateCaseBody(BaseModel):
     status: str | None = None
     notes: str | None = None
+    nextAction: str | None = Field(default=None, max_length=160)
 
 
 class SendMessageBody(BaseModel):
@@ -94,6 +102,16 @@ class VisitEventBody(BaseModel):
     pageLabel: str = Field(min_length=1, max_length=100)
     language: str = Field(default="fr", max_length=20)
     device: str = Field(default="Desktop", max_length=30)
+
+
+class VerifyMockBody(BaseModel):
+    value: str = Field(min_length=1, max_length=32)
+
+
+class AdminCaseActionBody(BaseModel):
+    reason: str | None = Field(default=None, max_length=320)
+    messageFr: str | None = Field(default=None, max_length=500)
+    messageDarija: str | None = Field(default=None, max_length=500)
 
 
 # --------------------------------------------------------------------------- #
@@ -125,6 +143,24 @@ def serialize_case(case: Case, include_service: bool = True) -> dict:
         estimated = (
             case.created_at + timedelta(days=case.service.avg_processing_days)
         ).isoformat()
+    current_status = canonical_status(case.status)
+    status_history = []
+    requested_action = None
+    for log in sorted(case.audit_logs, key=lambda event: (event.created_at, event.action != "created")):
+        details = log.details or {}
+        if log.action == "created":
+            status_history.append({"status": canonical_status(details.get("status", "SUBMITTED")), "occurredAt": log.created_at.isoformat()})
+        elif log.action == "status_changed":
+            status_history.append({"status": canonical_status(details.get("status", current_status)), "occurredAt": log.created_at.isoformat()})
+            requested_action = None
+        elif log.action == "action_required":
+            requested_action = details.get("nextAction")
+        elif log.action == "action_resolved":
+            requested_action = None
+    if not status_history:
+        status_history.append({"status": current_status, "occurredAt": case.created_at.isoformat()})
+    if status_history[-1]["status"] != current_status:
+        status_history.append({"status": current_status, "occurredAt": case.updated_at.isoformat()})
     payload = {
         "id": case.public_id,
         "referenceNumber": case.reference_number or f"OMN-{case.public_id:05d}",
@@ -132,7 +168,11 @@ def serialize_case(case: Case, include_service: bool = True) -> dict:
         "applicantName": case.applicant_name or "",
         "applicantEmail": case.applicant_email or "",
         "applicantPhone": case.applicant_phone,
-        "status": case.status,
+        "status": current_status,
+        "trackingCode": tracking_code(case.public_id, case.created_at),
+        "statusHistory": status_history,
+        "nextAction": f"Ajoutez la pièce demandée : {requested_action}." if requested_action else NEXT_ACTIONS.get(current_status, {}).get("fr", "Consultez votre dossier."),
+        "nextActionAr": f"زيد الوثيقة المطلوبة: {requested_action}." if requested_action else NEXT_ACTIONS.get(current_status, {}).get("ar", "تحقق من ملفك."),
         "notes": case.notes,
         "submittedAt": case.created_at.isoformat(),
         "updatedAt": case.updated_at.isoformat(),
@@ -176,6 +216,8 @@ TIMELINE_LABELS = {
     "status_changed": ("تغيّرت حالة الطلب", "Statut mis à jour"),
     "approved": ("تمت الموافقة على الطلب", "Demande approuvée"),
     "rejected": ("تم رفض الطلب", "Demande rejetée"),
+    "action_required": ("وثيقة إضافية مطلوبة", "Document complémentaire demandé"),
+    "action_resolved": ("تم رفع الوثيقة المطلوبة", "Document demandé téléversé"),
 }
 
 
@@ -187,7 +229,9 @@ def serialize_timeline_event(log: AuditLog, case_public_id: int, index: int) -> 
         "event": log.action,
         "descriptionAr": ar,
         "descriptionFr": fr,
-        "status": (log.details or {}).get("status"),
+        "status": canonical_status((log.details or {}).get("status", "")),
+        "nextAction": (log.details or {}).get("nextAction"),
+        "notificationDraft": (log.details or {}).get("notification"),
         "occurredAt": log.created_at.isoformat(),
     }
 
@@ -195,10 +239,12 @@ def serialize_timeline_event(log: AuditLog, case_public_id: int, index: int) -> 
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
-def get_case_or_404(db: Session, public_id: int) -> Case:
+def get_case_or_404(db: Session, public_id: int, current_user: User | None = None) -> Case:
     case = db.query(Case).filter(Case.public_id == public_id).first()
     if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    if current_user is not None and case.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return case
 
 
@@ -208,6 +254,24 @@ def next_public_id(db: Session) -> int:
 
 def log_action(db: Session, case_id: str, action: str, actor_id: str | None, details: dict) -> None:
     db.add(AuditLog(case_id=case_id, action=action, actor_id=actor_id, details=details))
+
+
+def advance_case(db: Session, case: Case, target: str, actor: User) -> None:
+    try:
+        next_step = validate_transition(case.status, target, is_admin=actor.is_admin)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    previous = canonical_status(case.status)
+    case.status = next_step
+    case.updated_at = datetime.utcnow()
+    code = tracking_code(case.public_id, case.created_at)
+    log_action(db, case.id, "status_changed", actor.id, {
+        "fromStatus": previous,
+        "status": next_step,
+        "notification": notification_draft(next_step, code),
+    })
 
 
 # --------------------------------------------------------------------------- #
@@ -221,6 +285,16 @@ async def healthz() -> dict:
 # --------------------------------------------------------------------------- #
 # Services
 # --------------------------------------------------------------------------- #
+@router.post("/verify/cin")
+async def verify_mock_cin(body: VerifyMockBody) -> dict:
+    return {"status": "success", "data": {"cin": body.value, **verify_mock_profile("cin", body.value)}}
+
+
+@router.post("/verify/cnss")
+async def verify_mock_cnss(body: VerifyMockBody) -> dict:
+    return {"status": "success", "data": {"cnss": body.value, **verify_mock_profile("cnss_number", body.value)}}
+
+
 @router.get("/services")
 async def list_services(db: Session = Depends(get_db)) -> list[dict]:
     services = db.query(Service).all()
@@ -265,20 +339,24 @@ async def create_case(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
 
     public_id = next_public_id(db)
+    created_at = datetime.utcnow()
     case = Case(
         public_id=public_id,
-        reference_number=f"OMN-{public_id:05d}",
+        reference_number=tracking_code(public_id, created_at),
         user_id=current_user.id,
         service_id=service.id,
         applicant_name=body.applicantName,
         applicant_email=body.applicantEmail,
         applicant_phone=body.applicantPhone,
         notes=body.notes,
-        status="submitted",
+        status="DRAFT",
+        created_at=created_at,
     )
     db.add(case)
     db.flush()
-    log_action(db, case.id, "created", current_user.id, {"service_id": service.id})
+    log_action(db, case.id, "created", current_user.id, {"service_id": service.id, "status": "DRAFT"})
+    if body.submit:
+        advance_case(db, case, "SUBMITTED", current_user)
     db.commit()
     db.refresh(case)
     return serialize_case(case)
@@ -290,7 +368,7 @@ async def get_case(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    return serialize_case(get_case_or_404(db, case_id))
+    return serialize_case(get_case_or_404(db, case_id, current_user))
 
 
 @router.patch("/cases/{case_id}")
@@ -300,10 +378,11 @@ async def update_case(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    case = get_case_or_404(db, case_id)
+    case = get_case_or_404(db, case_id, current_user)
+    if body.nextAction is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an administrator can request documents")
     if body.status is not None and body.status != case.status:
-        case.status = body.status
-        log_action(db, case.id, "status_changed", current_user.id, {"status": body.status})
+        advance_case(db, case, body.status, current_user)
     if body.notes is not None:
         case.notes = body.notes
     case.updated_at = datetime.utcnow()
@@ -318,7 +397,7 @@ async def get_case_timeline(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[dict]:
-    case = get_case_or_404(db, case_id)
+    case = get_case_or_404(db, case_id, current_user)
     logs = (
         db.query(AuditLog)
         .filter(AuditLog.case_id == case.id)
@@ -328,13 +407,30 @@ async def get_case_timeline(
     return [serialize_timeline_event(log, case.public_id, i + 1) for i, log in enumerate(logs)]
 
 
+@router.get("/cases/{case_id}/receipt")
+async def get_case_receipt(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    case = get_case_or_404(db, case_id, current_user)
+    if canonical_status(case.status) == "DRAFT":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Submit the draft before downloading a receipt")
+    code = tracking_code(case.public_id, case.created_at)
+    return Response(
+        content=render_case_receipt(case, serialize_case(case)["nextAction"]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="receipt-{code}.pdf"'},
+    )
+
+
 @router.get("/cases/{case_id}/documents")
 async def list_case_documents(
     case_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[dict]:
-    case = get_case_or_404(db, case_id)
+    case = get_case_or_404(db, case_id, current_user)
     docs = (
         db.query(Document)
         .filter(Document.case_id == case.id)
@@ -360,7 +456,7 @@ async def upload_case_document(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Upload one citizen document for a case (PDF or image, max 10 MB)."""
-    case = get_case_or_404(db, case_id)
+    case = get_case_or_404(db, case_id, current_user)
 
     content_type = (file.content_type or "").lower()
     if content_type not in ALLOWED_UPLOAD_MIME_TYPES:
@@ -405,6 +501,12 @@ async def upload_case_document(
         current_user.id,
         {"doc_type": document.doc_type, "file_name": safe_name},
     )
+    action_events = sorted(
+        (log for log in case.audit_logs if log.action in {"action_required", "action_resolved", "status_changed"}),
+        key=lambda log: log.created_at,
+    )
+    if action_events and action_events[-1].action == "action_required":
+        log_action(db, case.id, "action_resolved", current_user.id, {"file_name": safe_name})
     db.commit()
     db.refresh(document)
 
@@ -420,9 +522,7 @@ async def view_case_document(
     current_user: User = Depends(get_current_user),
 ):
     """Serve uploaded case document for inline preview or download (for citizen & admin)."""
-    case = get_case_or_404(db, case_id)
-    if not current_user.is_admin and case.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    case = get_case_or_404(db, case_id, current_user)
 
     doc = (
         db.query(Document)
@@ -455,9 +555,7 @@ async def delete_case_document(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Delete an uploaded case document (by citizen owner or admin)."""
-    case = get_case_or_404(db, case_id)
-    if not current_user.is_admin and case.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    case = get_case_or_404(db, case_id, current_user)
 
     doc = (
         db.query(Document)
@@ -496,7 +594,7 @@ async def list_case_messages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[dict]:
-    case = get_case_or_404(db, case_id)
+    case = get_case_or_404(db, case_id, current_user)
     messages = (
         db.query(ChatMessage)
         .filter(ChatMessage.case_id == case.id)
@@ -513,7 +611,7 @@ async def send_case_message(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    case = get_case_or_404(db, case_id)
+    case = get_case_or_404(db, case_id, current_user)
     language = body.language if body.language in MESSAGE_LANGUAGES else "darija"
 
     conversation_history = _recent_chat_history(
@@ -864,7 +962,50 @@ async def send_chat_message(
 from app.services.document_analyzer import (  # noqa: E402
     analyze_document,
     format_analysis_chat_message,
+    extract_structured_metadata,
 )
+
+
+@router.post("/documents/analyze-extract")
+async def analyze_and_extract_document(
+    file: UploadFile = File(...),
+    language: str = Form(default="darija"),
+) -> dict:
+    """Task 2.1 & 2.2: Structured Document OCR & Anomaly Extraction.
+
+    Extracts key Moroccan administrative fields (CIN, Name, Birth Date, Address,
+    Expiry Date) and detects anomalies (expired, blurry, irrelevant).
+    Returns clean structured JSON for 1-click form auto-fill.
+    """
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_UPLOAD_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PDF, JPEG, PNG or WebP files are accepted",
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File exceeds the 10 MB limit",
+        )
+
+    safe_name = _sanitize_filename(file.filename)
+    lang = language if language in MESSAGE_LANGUAGES else "darija"
+
+    extracted = extract_structured_metadata(
+        file_bytes=file_bytes,
+        content_type=content_type,
+        filename=safe_name,
+        language=lang,
+        google_api_key=settings.google_api_key,
+        gemini_model_name=settings.gemini_model,
+    )
+
+    return extracted.to_dict()
 
 
 @router.post("/chat/documents", status_code=status.HTTP_201_CREATED)
@@ -1014,7 +1155,11 @@ async def admin_visit_events(
 
 def status_counts(db: Session, base_query) -> list[dict]:
     rows = base_query.with_entities(Case.status, func.count(Case.id)).group_by(Case.status).all()
-    return [{"status": s, "count": c} for s, c in rows]
+    counts: dict[str, int] = {}
+    for raw_status, count in rows:
+        name = canonical_status(raw_status)
+        counts[name] = counts.get(name, 0) + count
+    return [{"status": name, "count": count} for name, count in counts.items()]
 
 
 @router.get("/dashboard/summary")
@@ -1024,9 +1169,9 @@ async def dashboard_summary(
 ) -> dict:
     base = db.query(Case).filter(Case.user_id == current_user.id)
     total = base.count()
-    approved = base.filter(Case.status == "approved").count()
+    approved = base.filter(Case.status.in_(["DOCS_APPROVED", "READY_FOR_PICKUP", "approved"])).count()
     pending_docs = base.filter(Case.status == "pending_documents").count()
-    active = base.filter(Case.status.in_(["submitted", "in_review"])).count()
+    active = base.filter(Case.status.in_(["SUBMITTED", "UNDER_REVIEW", "DOCS_APPROVED", "submitted", "in_review"])).count()
     recent = base.order_by(Case.created_at.desc()).limit(5).all()
 
     avg_days = (
@@ -1099,16 +1244,142 @@ async def admin_update_case(
 ) -> dict:
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-    case = get_case_or_404(db, case_id)
+    case = get_case_or_404(db, case_id, current_user)
     if body.status is not None and body.status != case.status:
-        case.status = body.status
-        log_action(db, case.id, "status_changed", current_user.id, {"status": body.status})
+        advance_case(db, case, body.status, current_user)
+    if body.nextAction and body.nextAction.strip():
+        if canonical_status(case.status) != "UNDER_REVIEW":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Documents can only be requested during review")
+        request_text = body.nextAction.strip()
+        log_action(db, case.id, "action_required", current_user.id, {
+            "status": canonical_status(case.status),
+            "nextAction": request_text,
+            "notification": notification_draft(case.status, tracking_code(case.public_id, case.created_at), missing_document=request_text),
+        })
     if body.notes is not None:
         case.notes = body.notes
     case.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(case)
     return serialize_case(case)
+
+
+@router.get("/admin/cases/{case_id}/ai-summary")
+async def admin_case_ai_summary(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Return an evidence-grounded, reviewable recommendation for one case."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    case = get_case_or_404(db, case_id, current_user)
+    return evaluate_case(case)
+
+
+@router.post("/admin/cases/{case_id}/actions/approve")
+async def admin_approve_case(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Validate the case documents and expose the SMS preview without sending it."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    case = get_case_or_404(db, case_id, current_user)
+    summary = evaluate_case(case)
+    if summary["recommendation"]["action"] != "APPROVE":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=summary["recommendation"]["reasonFr"],
+        )
+
+    current_status = canonical_status(case.status)
+    if current_status == "SUBMITTED":
+        advance_case(db, case, "UNDER_REVIEW", current_user)
+        current_status = "UNDER_REVIEW"
+    if current_status == "UNDER_REVIEW":
+        advance_case(db, case, "DOCS_APPROVED", current_user)
+    elif current_status != "DOCS_APPROVED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This case cannot be approved from its current status",
+        )
+
+    preview = notification_draft("DOCS_APPROVED", tracking_code(case.public_id, case.created_at))
+    log_action(db, case.id, "copilot_approved", current_user.id, {
+        "status": canonical_status(case.status),
+        "recommendation": summary["recommendation"],
+        "notification": preview,
+    })
+    db.commit()
+    db.refresh(case)
+    return {
+        "action": "approved",
+        "case": serialize_case(case),
+        "notificationPreview": {"channel": "SMS", **preview},
+    }
+
+
+@router.post("/admin/cases/{case_id}/actions/request-changes")
+async def admin_request_case_changes(
+    case_id: int,
+    body: AdminCaseActionBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Record a document request and return editable bilingual notification copy."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    case = get_case_or_404(db, case_id, current_user)
+    current_status = canonical_status(case.status)
+    if current_status == "SUBMITTED":
+        advance_case(db, case, "UNDER_REVIEW", current_user)
+    elif current_status != "UNDER_REVIEW":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Changes can only be requested while a case is under review",
+        )
+
+    summary = evaluate_case(case)
+    reason = (body.reason or summary["recommendation"]["reasonFr"]).strip()
+    default_preview = summary["notificationDraft"]
+    preview = {
+        "fr": (body.messageFr or default_preview["fr"]).strip(),
+        "darija": (body.messageDarija or default_preview["darija"]).strip(),
+    }
+    log_action(db, case.id, "action_required", current_user.id, {
+        "status": canonical_status(case.status),
+        "nextAction": reason,
+        "recommendation": summary["recommendation"],
+        "notification": preview,
+    })
+    case.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(case)
+    return {
+        "action": "changes_requested",
+        "case": serialize_case(case),
+        "notificationPreview": {"channel": "SMS / WhatsApp", **preview},
+    }
+
+
+@router.post("/admin/demo-personas/{persona_key}")
+async def admin_activate_demo_persona(
+    persona_key: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Create or reset a synthetic presentation case and return its copilot result."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    try:
+        case, persona = prepare_demo_persona(db, persona_key.lower(), current_user.id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown demo persona") from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Demo service unavailable: {exc}") from exc
+    return {"persona": persona, "case": serialize_case(case), "aiSummary": evaluate_case(case)}
 
 
 @router.get("/admin/notifications")
@@ -1122,7 +1393,7 @@ async def admin_notifications(
 
     pending_count = (
         db.query(func.count(Case.id))
-        .filter(Case.status.in_(("submitted", "in_review")))
+        .filter(Case.status.in_(("SUBMITTED", "UNDER_REVIEW", "submitted", "in_review")))
         .scalar()
         or 0
     )

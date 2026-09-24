@@ -7,11 +7,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatusBadge } from "./dashboard";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { Check, X, Users, Eye, Monitor, Smartphone, Tablet, MapPin, TrendingUp, Globe, Clock, RotateCcw } from "lucide-react";
+import { Check, Users, Eye, Monitor, Smartphone, Tablet, MapPin, TrendingUp, Globe, Clock, FilePlus2, Sparkles } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from "recharts";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getVisitors } from "@/lib/history";
+import { CASE_LABELS, canonicalCaseStatus, nextCaseStatus, type CaseStatus } from "@/lib/case-lifecycle";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { AdminCopilotCard } from "@/components/admin/AdminCopilotCard";
 
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', '#eab308', '#22c55e', '#ef4444'];
 
@@ -249,19 +254,48 @@ export default function Admin() {
   const { data: cases } = useAdminListCases();
   const updateCase = useUpdateCase();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [activeSection, setActiveSection] = useState<"cases" | "visitors">("cases");
+  const [copilotCaseId, setCopilotCaseId] = useState<number | null>(null);
+  const [documentRequestCaseId, setDocumentRequestCaseId] = useState<number | null>(null);
+  const [documentRequestText, setDocumentRequestText] = useState("");
 
-  const handleAction = (id: number, status: "approved" | "rejected" | "in_review" | "submitted") => {
+  useEffect(() => {
+    if (copilotCaseId == null && cases?.length) setCopilotCaseId(cases[0].id);
+  }, [cases, copilotCaseId]);
+
+  const refreshCase = (id: number) => {
+    queryClient.invalidateQueries({ queryKey: getAdminListCasesQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetAdminStatsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: ["admin", "notifications"] });
+    queryClient.invalidateQueries({ queryKey: ["case", id] });
+    queryClient.invalidateQueries({ queryKey: ["case-timeline", id] });
+    queryClient.invalidateQueries({ queryKey: ["cases"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  };
+
+  const handleAction = (id: number, status: CaseStatus) => {
     updateCase.mutate(
       { id, data: { status } },
       {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getAdminListCasesQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetAdminStatsQueryKey() });
-          queryClient.invalidateQueries({ queryKey: ["admin", "notifications"] });
-        }
+        onSuccess: () => refreshCase(id),
+        onError: (error) => toast({ variant: "destructive", title: language === "fr" ? "Changement refusé" : "تعذر تغيير الحالة", description: error.message }),
       }
     );
+  };
+
+  const requestDocument = () => {
+    const id = documentRequestCaseId;
+    const nextAction = documentRequestText.trim();
+    if (id == null || !nextAction) return;
+    updateCase.mutate({ id, data: { nextAction } }, {
+      onSuccess: () => {
+        refreshCase(id);
+        setDocumentRequestCaseId(null);
+        setDocumentRequestText("");
+      },
+      onError: (error) => toast({ variant: "destructive", title: language === "fr" ? "Demande impossible" : "تعذر طلب الوثيقة", description: error.message }),
+    });
   };
 
   return (
@@ -295,6 +329,10 @@ export default function Admin() {
 
         {activeSection === "cases" && (
           <>
+            {copilotCaseId != null && (
+              <AdminCopilotCard caseId={copilotCaseId} />
+            )}
+
             {/* Charts */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card>
@@ -359,45 +397,44 @@ export default function Admin() {
                           </TableCell>
                           <TableCell className="text-end">
                             <div className="flex items-center gap-1.5 justify-end flex-wrap">
-                              {/* Approve button - available if not currently approved */}
-                              {c.status !== "approved" && (
+                              <Button
+                                size="sm"
+                                variant={copilotCaseId === c.id ? "default" : "outline"}
+                                className="h-7 px-2.5 text-xs gap-1"
+                                onClick={() => {
+                                  setCopilotCaseId(c.id);
+                                  window.scrollTo({ top: 0, behavior: "smooth" });
+                                }}
+                                title={language === "fr" ? "Analyser avec le Copilot" : "تحليل الملف مع Copilot"}
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>Copilot</span>
+                              </Button>
+
+                              {nextCaseStatus(c.status) && canonicalCaseStatus(c.status) !== "DRAFT" && canonicalCaseStatus(c.status) !== "UNDER_REVIEW" && (
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   className="h-7 px-2.5 text-xs font-medium text-emerald-600 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 gap-1 shadow-xs"
-                                  onClick={() => handleAction(c.id, "approved")}
-                                  title={language === "fr" ? "Accepter la demande" : "قبول الطلب"}
+                                  disabled={updateCase.isPending}
+                                  onClick={() => handleAction(c.id, nextCaseStatus(c.status)!)}
+                                  title={language === "fr" ? "Passer à l'étape suivante" : "الانتقال للمرحلة التالية"}
                                 >
                                   <Check className="w-3.5 h-3.5" />
-                                  <span>{language === "fr" ? "Accepter" : "قبول"}</span>
+                                  <span>{CASE_LABELS[nextCaseStatus(c.status)!][language === "fr" ? "fr" : "ar"]}</span>
                                 </Button>
                               )}
 
-                              {/* Reject button - available if not currently rejected */}
-                              {c.status !== "rejected" && (
+                              {canonicalCaseStatus(c.status) === "UNDER_REVIEW" && (
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 px-2.5 text-xs font-medium text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700 gap-1 shadow-xs"
-                                  onClick={() => handleAction(c.id, "rejected")}
-                                  title={language === "fr" ? "Rejeter la demande" : "رفض الطلب"}
+                                  className="h-7 px-2.5 text-xs gap-1"
+                                  onClick={() => setDocumentRequestCaseId(c.id)}
+                                  title={language === "fr" ? "Demander une pièce manquante" : "طلب وثيقة ناقصة"}
                                 >
-                                  <X className="w-3.5 h-3.5" />
-                                  <span>{language === "fr" ? "Rejeter" : "رفض"}</span>
-                                </Button>
-                              )}
-
-                              {/* Reopen/Review button - available if decision was already made (approved or rejected) */}
-                              {(c.status === "approved" || c.status === "rejected") && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 px-2 text-xs text-amber-600 hover:bg-amber-50 hover:text-amber-700 gap-1"
-                                  onClick={() => handleAction(c.id, "in_review")}
-                                  title={language === "fr" ? "Changer la décision / Remettre en révision" : "تغيير القرار / إعادة المراجعة"}
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                  <span>{language === "fr" ? "Réviser" : "مراجعة"}</span>
+                                  <FilePlus2 className="w-3.5 h-3.5" />
+                                  <span>{language === "fr" ? "Pièce manquante" : "وثيقة ناقصة"}</span>
                                 </Button>
                               )}
 
@@ -433,6 +470,26 @@ export default function Admin() {
 
         {activeSection === "visitors" && <VisitorStats />}
       </div>
+      <Dialog open={documentRequestCaseId !== null} onOpenChange={(open) => {
+        if (!open) {
+          setDocumentRequestCaseId(null);
+          setDocumentRequestText("");
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{language === "fr" ? "Demander une pièce" : "طلب وثيقة"}</DialogTitle>
+            <DialogDescription>{language === "fr" ? "Indiquez le nom de la pièce manquante. Un brouillon de notification sera ajouté au suivi." : "حدد اسم الوثيقة الناقصة. غادي يتزاد إشعار فالتتبع."}</DialogDescription>
+          </DialogHeader>
+          <Input value={documentRequestText} onChange={(event) => setDocumentRequestText(event.target.value)}
+            placeholder={language === "fr" ? "Ex. Facture d'électricité" : "مثلاً فاتورة الكهرباء"} maxLength={160} />
+          <DialogFooter>
+            <Button type="button" onClick={requestDocument} disabled={!documentRequestText.trim() || updateCase.isPending}>
+              {language === "fr" ? "Enregistrer la demande" : "تسجيل الطلب"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

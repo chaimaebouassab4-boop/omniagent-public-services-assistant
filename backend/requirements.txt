@@ -6,6 +6,7 @@ python-multipart
 sqlalchemy
 python-jose
 pypdf
+reportlab
 python-dotenv
 # ── RAG pipeline (lightweight: no LlamaIndex, no PyTorch) ──
 rank-bm25

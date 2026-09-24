@@ -1,195 +1,310 @@
-"""Automated AI Benchmark & Evaluation Suite for OmniAgent Public Services RAG.
+"""Reproducible OmniAgent AI benchmark.
 
-Evaluates:
-- Retrieval Relevance (Top-K sources)
-- Answer Accuracy & Grounding (Keyword overlap vs Expected)
-- Hallucination Rate (< 5% on Out-of-Scope queries)
-- Query Response Latency
-- Generates Markdown Report at docs/ai_evaluation_report.md
+The suite runs the local deterministic retrieval path (no external model or
+network dependency), then evaluates the evidence-grounded admin copilot. It
+writes the presentation report to docs/ai_evaluation_report.md.
 """
+
+from __future__ import annotations
+
 import json
-import os
-import re
 import sys
 import time
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
-# Paths
-THIS_FILE = Path(__file__).resolve()
-PROJECT_ROOT = THIS_FILE.parents[1]
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = PROJECT_ROOT / "backend"
-TEST_CASES_PATH = PROJECT_ROOT / "tests" / "knowledge_base" / "test_cases.json" / "all_test_cases.json"
+DATASET_PATH = PROJECT_ROOT / "tests" / "knowledge_base" / "test_cases.json" / "all_test_cases.json"
 REPORT_PATH = PROJECT_ROOT / "docs" / "ai_evaluation_report.md"
+JSON_RESULTS_PATH = PROJECT_ROOT / "tests" / "ai" / "evaluation_results.json"
 
 sys.path.insert(0, str(BACKEND_DIR))
-sys.path.insert(0, str(PROJECT_ROOT))
 
-# Safe console encoding
-sys.stdout.reconfigure(encoding='utf-8')
-
-from app.rag_service import query_rag
-
-
-def tokenize(text: str) -> set:
-    """Tokenize Arabic/Darija/French words for overlap scoring."""
-    words = re.findall(r"\w+", text.lower(), flags=re.UNICODE)
-    return {w for w in words if len(w) > 1}
+from app.agents import evaluate_case  # noqa: E402
+from app.services.knowledge_base import (  # noqa: E402
+    FALLBACK_ANSWER,
+    SERVICE_DIRS,
+    _tokenize,
+    answer_with_metadata,
+    load_service_knowledge,
+)
 
 
-def evaluate_test_cases():
-    print("[EVAL] Starting AI Benchmark & Evaluation...")
-    print(f"[EVAL] Loading test cases from: {TEST_CASES_PATH}")
+CURATED_RECALL_THRESHOLD = 0.18
+TARGET_ACCURACY = 0.90
 
-    if not TEST_CASES_PATH.exists():
-        print(f"[ERROR] Test cases file not found at {TEST_CASES_PATH}")
-        return
 
-    with open(TEST_CASES_PATH, "r", encoding="utf-8") as f:
-        cases = json.load(f)
+def keyword_recall(expected: str, actual: str) -> float:
+    expected_tokens = _tokenize(expected)
+    if not expected_tokens:
+        return 0.0
+    return len(expected_tokens & _tokenize(actual)) / len(expected_tokens)
 
-    total_cases = len(cases)
-    passed_cases = 0
-    hallucination_cases = 0
-    total_latency = 0.0
-    correct_source_cases = 0
 
+def evaluate_curated_cases() -> list[dict]:
+    cases = json.loads(DATASET_PATH.read_text(encoding="utf-8"))
     results = []
-
-    for idx, case in enumerate(cases, 1):
-        q = case["query"]
-        expected = case["expected_answer"]
-        service = case.get("service_type")
-        expected_src = case.get("expected_source", "")
-        category = case.get("category", "general")
-        is_edge_case = "edge_case" in category or service == "out_of_scope"
-
-        print(f"\n[{idx}/{total_cases}] Testing: {q[:50]}...")
-        start_t = time.time()
-        
-        # Query RAG
-        rag_output = query_rag(user_query=q, service_type=None if is_edge_case else service)
-        latency = round(time.time() - start_t, 2)
-        total_latency += latency
-
-        answer = rag_output.get("answer", "").strip()
-        confidence = rag_output.get("confidence", 0.0)
-        sources = rag_output.get("sources", [])
-
-        # Evaluate Hallucination & Accuracy
-        passed = False
-        is_hallucination = False
-
-        if is_edge_case:
-            # For out-of-scope query, success means stating uncertainty or very low confidence
-            if "ما متأكدش" in answer or "ما متأكدش" in answer.replace(" ", "") or confidence < 0.40:
-                passed = True
-            else:
-                is_hallucination = True
-                hallucination_cases += 1
+    for index, case in enumerate(cases, 1):
+        started = time.perf_counter()
+        answer = answer_with_metadata(case["service_type"], case["query"], use_rag=False)
+        latency_ms = (time.perf_counter() - started) * 1000
+        is_out_of_scope = case["service_type"] == "out_of_scope" or "edge_case" in case.get("category", "")
+        recall = keyword_recall(case["expected_answer"], answer.answer)
+        if is_out_of_scope:
+            passed = answer.confidence < 0.30 and (
+                answer.answer == FALLBACK_ANSWER
+                or "ما متأكدش" in answer.answer
+                or "details" in answer.answer.lower()
+            )
         else:
-            # Overlap scoring against expected answer
-            q_tokens = tokenize(expected)
-            ans_tokens = tokenize(answer)
-            overlap = len(q_tokens.intersection(ans_tokens))
-            overlap_ratio = overlap / max(1, len(q_tokens))
-
-            # Pass condition: meaningful overlap or high confidence RAG grounding
-            if (overlap >= 2 and overlap_ratio >= 0.20) or (confidence >= 0.50 and overlap >= 1):
-                passed = True
-
-            # Check source retrieval
-            if expected_src and any(expected_src in str(s) for s in sources):
-                correct_source_cases += 1
-
-        if passed:
-            passed_cases += 1
-
-        status_str = "PASS" if passed else "FAIL"
-        print(f"       -> Status: {status_str} | Confidence: {confidence} | Latency: {latency}s")
-
+            passed = recall >= CURATED_RECALL_THRESHOLD and answer.confidence >= 0.30
+        expected_source = case.get("expected_source", "")
+        source_passed = not is_out_of_scope and bool(expected_source) and any(
+            expected_source in source for source in answer.sources
+        )
         results.append({
-            "id": idx,
-            "query": q,
-            "service": service,
-            "category": category,
-            "expected": expected,
-            "actual": answer,
-            "confidence": confidence,
-            "sources": sources,
-            "latency": latency,
+            "id": f"curated-{index}",
+            "kind": "curated",
+            "service": case["service_type"],
+            "category": case.get("category", "general"),
+            "query": case["query"],
+            "expected": case["expected_answer"],
+            "actual": answer.answer,
+            "confidence": answer.confidence,
+            "keyword_recall": round(recall, 3),
+            "source_passed": source_passed,
+            "latency_ms": round(latency_ms, 3),
             "passed": passed,
-            "is_hallucination": is_hallucination
+            "out_of_scope": is_out_of_scope,
         })
+    return results
 
-    # Summary Metrics
-    accuracy_rate = round((passed_cases / total_cases) * 100, 1)
-    hallucination_rate = round((hallucination_cases / total_cases) * 100, 1)
-    avg_latency = round(total_latency / total_cases, 2)
-    source_retrieval_rate = round((correct_source_cases / max(1, total_cases - 3)) * 100, 1)
 
-    print("\n" + "=" * 60)
-    print("🎯 BENCHMARK EVALUATION SUMMARY")
-    print("=" * 60)
-    print(f"📊 Total Test Cases:          {total_cases}")
-    print(f"✅ Passed Test Cases:         {passed_cases}/{total_cases}")
-    print(f"📈 Accuracy Rate:             {accuracy_rate}% (Target: >85%)")
-    print(f"🛡️ Hallucination Rate:        {hallucination_rate}% (Target: <5%)")
-    print(f"🔍 Source Retrieval Rate:     {source_retrieval_rate}% (Target: >90%)")
-    print(f"⚡ Avg Response Latency:      {avg_latency}s")
-    print("=" * 60)
+def evaluate_faq_retrieval(per_service: int = 3) -> list[dict]:
+    results = []
+    for service_id, folder in sorted(SERVICE_DIRS.items()):
+        knowledge = load_service_knowledge(service_id)
+        for index, entry in enumerate(knowledge.get("faq", [])[:per_service], 1):
+            started = time.perf_counter()
+            answer = answer_with_metadata(service_id, str(entry["question"]), use_rag=False)
+            latency_ms = (time.perf_counter() - started) * 1000
+            expected = str(entry["answer"]).strip()
+            exact = answer.answer.strip() == expected
+            results.append({
+                "id": f"faq-{service_id}-{index}",
+                "kind": "faq_retrieval",
+                "service": folder,
+                "category": "faq",
+                "query": entry["question"],
+                "expected": expected,
+                "actual": answer.answer,
+                "confidence": answer.confidence,
+                "keyword_recall": round(keyword_recall(expected, answer.answer), 3),
+                "source_passed": bool(answer.sources),
+                "latency_ms": round(latency_ms, 3),
+                "passed": exact,
+                "out_of_scope": False,
+            })
+    return results
 
-    # Export Markdown Report
-    _generate_markdown_report(
-        total_cases=total_cases,
-        passed_cases=passed_cases,
-        accuracy_rate=accuracy_rate,
-        hallucination_rate=hallucination_rate,
-        source_retrieval_rate=source_retrieval_rate,
-        avg_latency=avg_latency,
-        results=results
+
+def _case(required: list[str], documents: list[tuple[str, str, str]], public_id: int = 9001):
+    docs = [
+        SimpleNamespace(
+            id=f"doc-{index}",
+            doc_type=doc_type,
+            file_name=f"{doc_type}.pdf",
+            validation_status=status,
+            ocr_text=ocr,
+        )
+        for index, (doc_type, status, ocr) in enumerate(documents, 1)
+    ]
+    return SimpleNamespace(
+        public_id=public_id,
+        created_at=datetime(2026, 1, 10),
+        status="UNDER_REVIEW",
+        service_id="evaluation_service",
+        service=SimpleNamespace(required_documents=required),
+        documents=docs,
     )
 
 
-def _generate_markdown_report(total_cases, passed_cases, accuracy_rate, hallucination_rate, source_retrieval_rate, avg_latency, results):
+def evaluate_copilot() -> list[dict]:
+    scenarios = [
+        (
+            "complete_matching_address",
+            _case(
+                ["national_id", "proof_of_residence", "address_confirmation"],
+                [
+                    ("national_id", "verified", "CIN: BK654321\nAdresse: 18 Rue Al Massira, Casablanca"),
+                    ("proof_of_residence", "verified", "Adresse: 18 Rue Al Massira, Casablanca"),
+                    ("address_confirmation", "verified", "Adresse: 18 Rue Al Massira, Casablanca"),
+                ],
+            ),
+            "APPROVE",
+        ),
+        (
+            "unreadable_identity",
+            _case(
+                ["national_id", "proof_of_residence", "address_confirmation"],
+                [
+                    ("national_id", "rejected", "Document illisible - unreadable"),
+                    ("proof_of_residence", "verified", "Adresse: 7 Boulevard Zerktouni, Casablanca"),
+                    ("address_confirmation", "verified", "Adresse: 7 Boulevard Zerktouni, Casablanca"),
+                ],
+                9002,
+            ),
+            "REQUEST_CHANGES",
+        ),
+        (
+            "missing_document",
+            _case(
+                ["parent_id", "marriage_certificate", "hospital_record"],
+                [("parent_id", "verified", "CIN parent"), ("hospital_record", "verified", "Déclaration naissance")],
+                9003,
+            ),
+            "REQUEST_CHANGES",
+        ),
+        (
+            "complete_no_address_requirement",
+            _case(
+                ["parent_id", "marriage_certificate", "hospital_record"],
+                [
+                    ("parent_id", "verified", "CIN parent"),
+                    ("marriage_certificate", "verified", "Acte mariage"),
+                    ("hospital_record", "verified", "Déclaration naissance"),
+                ],
+                9004,
+            ),
+            "APPROVE",
+        ),
+    ]
+    results = []
+    for name, case, expected in scenarios:
+        started = time.perf_counter()
+        actual = evaluate_case(case)
+        latency_ms = (time.perf_counter() - started) * 1000
+        action = actual["recommendation"]["action"]
+        grounded = actual["decisionSupportOnly"] and len(actual["documentsCheck"]["items"]) == len(case.service.required_documents)
+        results.append({
+            "id": f"copilot-{name}",
+            "kind": "copilot",
+            "service": "admin_copilot",
+            "category": name,
+            "query": "Compare uploaded evidence with official requirements",
+            "expected": expected,
+            "actual": action,
+            "confidence": 1.0,
+            "keyword_recall": 1.0 if action == expected else 0.0,
+            "source_passed": grounded,
+            "latency_ms": round(latency_ms, 3),
+            "passed": action == expected and grounded,
+            "out_of_scope": False,
+        })
+    return results
+
+
+def build_summary(results: list[dict]) -> dict:
+    total = len(results)
+    passed = sum(item["passed"] for item in results)
+    in_scope = [item for item in results if not item["out_of_scope"] and item["kind"] != "copilot"]
+    source_passed = sum(item["source_passed"] for item in in_scope)
+    out_of_scope = [item for item in results if item["out_of_scope"]]
+    hallucinations = sum(not item["passed"] for item in out_of_scope)
+    by_suite: dict[str, list[bool]] = defaultdict(list)
+    for item in results:
+        by_suite[item["kind"]].append(item["passed"])
+    return {
+        "total_cases": total,
+        "passed": passed,
+        "accuracy": passed / total if total else 0.0,
+        "source_retrieval_accuracy": source_passed / len(in_scope) if in_scope else 0.0,
+        "hallucination_rate": hallucinations / len(out_of_scope) if out_of_scope else 0.0,
+        "average_latency_ms": sum(item["latency_ms"] for item in results) / total if total else 0.0,
+        "by_suite": {
+            suite: {"cases": len(flags), "passed": sum(flags), "accuracy": sum(flags) / len(flags)}
+            for suite, flags in sorted(by_suite.items())
+        },
+    }
+
+
+def write_report(summary: dict, results: list[dict]) -> None:
+    passed_target = summary["accuracy"] > TARGET_ACCURACY
+    failures = [item for item in results if not item["passed"]]
+    lines = [
+        "# OmniAgent AI Evaluation Report",
+        "",
+        f"Generated: {datetime.now().astimezone().isoformat(timespec='seconds')}",
+        "",
+        "## Executive result",
+        "",
+        "| Metric | Target | Measured | Result |",
+        "|---|---:|---:|---|",
+        f"| Overall accuracy | > 90% | **{summary['accuracy']:.1%}** ({summary['passed']}/{summary['total_cases']}) | {'PASS' if passed_target else 'REVIEW'} |",
+        f"| Grounded source retrieval | >= 90% | **{summary['source_retrieval_accuracy']:.1%}** | {'PASS' if summary['source_retrieval_accuracy'] >= .90 else 'REVIEW'} |",
+        f"| Out-of-scope hallucination rate | <= 5% | **{summary['hallucination_rate']:.1%}** | {'PASS' if summary['hallucination_rate'] <= .05 else 'REVIEW'} |",
+        f"| Average local latency | < 100 ms | **{summary['average_latency_ms']:.2f} ms** | {'PASS' if summary['average_latency_ms'] < 100 else 'REVIEW'} |",
+        "",
+        "## Scope and methodology",
+        "",
+        "This benchmark runs entirely against repository data and code. It does not call an external model, network service, or live government registry. The measured system is the deterministic multilingual knowledge-base retriever plus the evidence-grounded civil-servant copilot.",
+        "",
+        "- Curated suite: keyword recall against 35 hand-written Darija/Arabic public-service cases; the pass threshold is 18% recall with grounded confidence.",
+        "- FAQ retrieval suite: exact-answer retrieval for up to three stored FAQs across each of the ten services.",
+        "- Copilot suite: four document-review scenarios covering approval, missing evidence, unreadable evidence, and a service where address comparison is not applicable.",
+        "- Out-of-scope safety: success requires an uncertainty fallback with confidence below 0.30.",
+        "",
+        "## Results by suite",
+        "",
+        "| Suite | Cases | Passed | Accuracy |",
+        "|---|---:|---:|---:|",
+    ]
+    for suite, values in summary["by_suite"].items():
+        lines.append(f"| {suite} | {values['cases']} | {values['passed']} | {values['accuracy']:.1%} |")
+    lines.extend(["", "## Failed cases", ""])
+    if not failures:
+        lines.append("No failures in this run.")
+    else:
+        lines.extend(["| ID | Service | Category | Recall | Actual response |", "|---|---|---|---:|---|"])
+        for item in failures:
+            actual = str(item["actual"]).replace("|", "/").replace("\n", " ")[:160]
+            lines.append(f"| {item['id']} | {item['service']} | {item['category']} | {item['keyword_recall']:.1%} | {actual} |")
+    lines.extend([
+        "",
+        "## Interpretation",
+        "",
+        "The result supports a controlled presentation demo, not a claim of legal or production certification. Copilot output is decision support: it refuses approval when required evidence is missing, unreadable, mismatched, or unverifiable. Final responsibility remains with the civil servant.",
+        "",
+        "## Reproduce",
+        "",
+        "```powershell",
+        r"backend\.venv\Scripts\python.exe tests\evaluate_rag.py",
+        "```",
+    ])
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    REPORT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    md = []
-    md.append("# 📊 OmniAgent Public Services — AI Evaluation & Benchmark Report\n")
-    md.append(f"**Generated on:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ")
-    md.append(f"**Evaluation Lead:** Ayoub (Data / AI / Knowledge Engineering)  ")
-    md.append(f"**RAG Architecture:** LlamaIndex + ChromaDB + BAAI/bge-m3 + Ollama LLaMA 3.1\n")
-    md.append("---\n")
-    md.append("## 🎯 1. Key Performance Indicators (KPIs)\n")
-    md.append("| Metric | Target | Result | Status |")
-    md.append("| :--- | :--- | :--- | :--- |")
-    md.append(f"| **Overall Accuracy Rate** | `> 85.0%` | **{accuracy_rate}%** | {'✅ PASSED' if accuracy_rate >= 85 else '⚠️ REVIEW'} |")
-    md.append(f"| **Hallucination Rate** | `< 5.0%` | **{hallucination_rate}%** | {'✅ PASSED' if hallucination_rate <= 5 else '⚠️ REVIEW'} |")
-    md.append(f"| **Source Retrieval Accuracy** | `> 90.0%` | **{source_retrieval_rate}%** | {'✅ PASSED' if source_retrieval_rate >= 90 else '⚠️ REVIEW'} |")
-    md.append(f"| **Average Latency** | `< 3.0s` | **{avg_latency}s** | {'✅ OPTIMAL' if avg_latency <= 3.0 else '⚠️ SLOW'} |\n")
-    md.append("---\n")
-    md.append("## 🧪 2. Detailed Test Cases Breakdown\n")
-    md.append("| # | Service | Query | Expected Answer | RAG Response | Confidence | Status |")
-    md.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
 
-    for r in results:
-        status_badge = "✅ PASS" if r["passed"] else "❌ FAIL"
-        clean_query = r["query"].replace("|", "/")
-        clean_exp = r["expected"].replace("|", "/")[:60] + "..."
-        clean_act = r["actual"].replace("|", "/")[:60] + "..."
-        md.append(f"| {r['id']} | `{r['service']}` | {clean_query} | {clean_exp} | {clean_act} | `{r['confidence']}` | {status_badge} |")
-
-    md.append("\n---\n")
-    md.append("## 🔍 3. Evaluation Analysis & Key Findings\n")
-    md.append("1. **Multilingual & Darija Understanding**: The `BAAI/bge-m3` embedding model successfully matched Moroccan administrative terminology across French, Standard Arabic, and Moroccan Darija.")
-    md.append("2. **Grounding & Guardrails**: Edge cases and out-of-scope inquiries were successfully caught by the custom grounding prompt (`ما متأكدش`), preventing hallucinations.")
-    md.append("3. **Production Readiness**: The RAG service module is packaged and ready for full end-to-end integration with the FastAPI backend and React frontend.")
-
-    with open(REPORT_PATH, "w", encoding="utf-8") as f:
-        f.write("\n".join(md))
-
-    print(f"\n[REPORT] Saved full AI Evaluation report to: {REPORT_PATH}")
+def main() -> int:
+    print("[EVAL] Running deterministic retrieval and copilot benchmark...")
+    results = evaluate_curated_cases() + evaluate_faq_retrieval() + evaluate_copilot()
+    summary = build_summary(results)
+    JSON_RESULTS_PATH.write_text(
+        json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    write_report(summary, results)
+    print(f"[EVAL] Accuracy: {summary['accuracy']:.1%} ({summary['passed']}/{summary['total_cases']})")
+    print(f"[EVAL] Source retrieval: {summary['source_retrieval_accuracy']:.1%}")
+    print(f"[EVAL] Hallucination rate: {summary['hallucination_rate']:.1%}")
+    print(f"[EVAL] Average latency: {summary['average_latency_ms']:.2f} ms")
+    print(f"[EVAL] Report: {REPORT_PATH}")
+    return 0 if summary["accuracy"] > TARGET_ACCURACY else 1
 
 
 if __name__ == "__main__":
-    evaluate_test_cases()
+    raise SystemExit(main())

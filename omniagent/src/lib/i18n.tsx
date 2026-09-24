@@ -10,6 +10,7 @@ export const translations: Translations = {
   "nav.home": { ar: "الرئيسية", fr: "Accueil", darija: "الرئيسية" },
   "nav.services": { ar: "الخدمات", fr: "Services", darija: "الخدمات" },
   "nav.dashboard": { ar: "ملفاتي", fr: "Mes dossiers", darija: "ملفاتي" },
+  "nav.history": { ar: "تتبع الطلبات", fr: "Historique et suivi", darija: "تتبع الطلبات" },
   "nav.chat": { ar: "المساعد الذكي", fr: "Assistant IA", darija: "المساعد الذكي" },
   "nav.admin": { ar: "الإدارة", fr: "Administration", darija: "الإدارة" },
   "nav.profile": { ar: "الملف الشخصي", fr: "Profil", darija: "الملف الشخصي" },

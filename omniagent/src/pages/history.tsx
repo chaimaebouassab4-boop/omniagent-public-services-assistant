@@ -7,6 +7,9 @@ import { History, Trash2, Globe, Clock, ArrowRight, ArrowLeft } from "lucide-rea
 import { useState, useEffect } from "react";
 import { getHistory, clearHistory, type VisitEntry } from "@/lib/history";
 import { Link } from "wouter";
+import { useListCases } from "@workspace/api-client-react";
+import { CaseProgressTimeline } from "@/components/cases/CaseProgressTimeline";
+import { StatusBadge } from "./dashboard";
 
 const PAGE_LABELS: Record<string, { fr: string; ar: string; color: string }> = {
   "/": { fr: "Accueil", ar: "الرئيسية", color: "bg-primary/10 text-primary" },
@@ -58,6 +61,7 @@ export default function HistoryPage() {
   const { language, isRtl } = useI18n();
   const [entries, setEntries] = useState<VisitEntry[]>([]);
   const [confirmed, setConfirmed] = useState(false);
+  const { data: cases = [], isLoading: casesLoading } = useListCases();
 
   useEffect(() => {
     setEntries(getHistory());
@@ -81,12 +85,12 @@ export default function HistoryPage() {
           <div className={isRtl ? "text-right" : ""}>
             <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
               <History className="w-7 h-7 text-primary" />
-              {language === "fr" ? "Mon historique" : language === "ar" ? "سجل زياراتي" : "سجل الزيارات ديالي"}
+              {language === "fr" ? "Historique et suivi" : "سجل وتتبع الطلبات"}
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
               {language === "fr"
-                ? `${entries.length} page${entries.length > 1 ? "s" : ""} visitée${entries.length > 1 ? "s" : ""}`
-                : `${entries.length} صفحة تمت زيارتها`}
+                ? `${cases.length} dossier${cases.length > 1 ? "s" : ""} · ${entries.length} visite${entries.length > 1 ? "s" : ""}`
+                : `${cases.length} طلب · ${entries.length} زيارة`}
             </p>
           </div>
           {entries.length > 0 && (
@@ -103,6 +107,32 @@ export default function HistoryPage() {
             </Button>
           )}
         </div>
+
+        <section className="space-y-4" aria-label={language === "fr" ? "Suivi des dossiers" : "تتبع الطلبات"}>
+          <h2 className="text-xl font-semibold">{language === "fr" ? "Mes dossiers" : "طلباتي"}</h2>
+          {casesLoading && <p className="text-sm text-muted-foreground">{language === "fr" ? "Chargement des dossiers…" : "جاري تحميل الطلبات…"}</p>}
+          {!casesLoading && !cases.length && <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+            {language === "fr" ? "Aucun dossier pour le moment." : "ما كاين حتى طلب دابا."}
+          </div>}
+          {cases.map((caseItem) => <div key={caseItem.id} className="rounded-xl border bg-card p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="font-semibold">{language === "fr" ? caseItem.service?.nameFr : caseItem.service?.nameAr}</p>
+                <p className="text-xs text-muted-foreground font-mono">{caseItem.trackingCode ?? caseItem.referenceNumber}</p>
+              </div>
+              <StatusBadge status={caseItem.status} />
+            </div>
+            <CaseProgressTimeline caseData={caseItem} compact />
+            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>{language === "fr" ? caseItem.nextAction : caseItem.nextActionAr}</span>
+              <Link href={`/cases/${caseItem.id}`} className="shrink-0 font-medium text-primary hover:underline">
+                {language === "fr" ? "Voir le dossier" : "عرض الطلب"}
+              </Link>
+            </div>
+          </div>)}
+        </section>
+
+        <h2 className="text-xl font-semibold">{language === "fr" ? "Pages consultées" : "الصفحات المزارة"}</h2>
 
         {/* Empty state */}
         {entries.length === 0 && (

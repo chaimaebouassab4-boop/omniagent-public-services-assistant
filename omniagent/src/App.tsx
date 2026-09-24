@@ -32,6 +32,7 @@ import CaseDetail from "@/pages/case-detail";
 import Chat from "@/pages/chat";
 import Profile from "@/pages/profile";
 import Admin from "@/pages/admin";
+import HistoryPage from "@/pages/history";
 
 function handleApiError(error: unknown): void {
   if (
@@ -91,6 +92,7 @@ function AnalyticsTracker() {
       "/services": "Services",
       "/chat": "Assistant IA",
       "/dashboard": "Tableau de bord",
+      "/history": "Historique et suivi",
       "/profile": "Profil",
       "/admin": "Administration",
     };
@@ -117,6 +119,9 @@ function Router() {
       </Route>
       <Route path="/dashboard">
         <Protected><Dashboard /></Protected>
+      </Route>
+      <Route path="/history">
+        <Protected><HistoryPage /></Protected>
       </Route>
       <Route path="/cases/:id">
         <Protected><CaseDetail /></Protected>

@@ -20,13 +20,15 @@ import {
   Sparkles, ArrowUpRight, X, Image as ImageIcon, Volume2, Square,
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { uploadChatDocument, validateFile } from "@/lib/documents";
+import { uploadChatDocument, validateFile, analyzeAndExtractDocument, type ExtractedDocumentMetadata } from "@/lib/documents";
 import { listChatSessions, listSessionMessages, sendSessionMessage, deleteChatSession, transcribeVoice, synthesizeVoice } from "@/lib/chat";
 import type { ChatMessage } from "@/lib/chat";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
+import { ExtractedDocumentCard, DocumentScanningSkeleton } from "@/components/chat/ExtractedDocumentCard";
 
 const DOCUMENT_PREFIX = "[Document] ";
 
@@ -39,10 +41,13 @@ export default function Chat() {
   const { t, language, isRtl } = useI18n();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [_, setLocation] = useLocation();
 
   const [activeSessionId, setActiveSessionId] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [stagedFile, setStagedFile] = useState<File | null>(null);
+  const [extractedDoc, setExtractedDoc] = useState<ExtractedDocumentMetadata | null>(null);
+  const [isAnalyzingDoc, setIsAnalyzingDoc] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [playback, setPlayback] = useState<{ messageId: string; state: "loading" | "playing" } | null>(null);
@@ -230,7 +235,7 @@ export default function Chat() {
     }
   }, [displayMessages, sendChatMessage.isPending, isUploading]);
 
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
@@ -248,8 +253,41 @@ export default function Chat() {
       return;
     }
 
-    // Stage file for preview / attachment instead of immediate auto-upload
+    // Stage file for preview / attachment and run smart extraction
     setStagedFile(file);
+    setExtractedDoc(null);
+    setIsAnalyzingDoc(true);
+
+    try {
+      const metadata = await analyzeAndExtractDocument(file, language);
+      setExtractedDoc(metadata);
+    } catch (err) {
+      console.warn("Document analysis notice:", err);
+    } finally {
+      setIsAnalyzingDoc(false);
+    }
+  };
+
+  const handlePreFillRequest = (fields: {
+    applicantName: string;
+    cinNumber: string;
+    address: string;
+    birthDate: string;
+    documentType: string;
+  }) => {
+    try {
+      sessionStorage.setItem("omniagent_prefill", JSON.stringify(fields));
+      toast({
+        title: language === "fr" ? "Données pré-remplies !" : "تم حفظ البيانات!",
+        description:
+          language === "fr"
+            ? "Redirection vers le formulaire de démarche administrative..."
+            : "جاري توجيهك إلى استمارة الإجراء الإداري...",
+      });
+      setLocation("/services?prefill=true");
+    } catch (err) {
+      console.error("Failed to store prefill:", err);
+    }
   };
 
   const handleSendMessage = async (e?: React.FormEvent) => {
@@ -263,6 +301,7 @@ export default function Chat() {
     // Reset inputs immediately for snappy UX
     setMessageInput("");
     setStagedFile(null);
+    setExtractedDoc(null);
 
     // Case 1: An attachment is present (with or without accompanying text)
     if (fileToSend) {
@@ -590,7 +629,29 @@ export default function Chat() {
                   </div>
                 </div>
               )}
-              {stagedFile && (
+              {/* ── Feature 2: Document Scanning Skeleton or Extracted Document Card ── */}
+              {isAnalyzingDoc && stagedFile ? (
+                <div className="mb-3">
+                  <DocumentScanningSkeleton
+                    filename={stagedFile.name}
+                    isRtl={isRtl}
+                    language={language}
+                  />
+                </div>
+              ) : stagedFile && extractedDoc ? (
+                <div className="mb-3">
+                  <ExtractedDocumentCard
+                    metadata={extractedDoc}
+                    file={stagedFile}
+                    onPreFillRequest={handlePreFillRequest}
+                    onSendToChat={() => void handleSendMessage()}
+                    onDismiss={() => {
+                      setStagedFile(null);
+                      setExtractedDoc(null);
+                    }}
+                  />
+                </div>
+              ) : stagedFile ? (
                 <div
                   className={`mb-3 p-3 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-between gap-3 shadow-xs animate-in fade-in slide-in-from-bottom-2 duration-150 ${
                     isRtl ? "flex-row-reverse" : ""
@@ -631,14 +692,17 @@ export default function Chat() {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
-                    onClick={() => setStagedFile(null)}
+                    onClick={() => {
+                      setStagedFile(null);
+                      setExtractedDoc(null);
+                    }}
                     title={language === "fr" ? "Supprimer la pièce jointe" : "إلغاء المرفق"}
                   >
                     <X className="w-4 h-4" />
                     <span className="sr-only">Cancel</span>
                   </Button>
                 </div>
-              )}
+              ) : null}
               {recorder.status !== "idle" || isTranscribing ? (
                 <div className="flex items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-2 min-h-14" role="status" aria-live="polite">
                   <span className={`h-3 w-3 shrink-0 rounded-full bg-destructive ${recorder.status === "recording" ? "animate-pulse" : ""}`} aria-hidden="true" />

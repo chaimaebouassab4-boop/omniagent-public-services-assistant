@@ -9,6 +9,7 @@ import {
   CheckCircle, ChevronRight, Search, ExternalLink, Banknote,
   Home, Baby, Heart, ScrollText, HeartPulse, UserCheck,
   Building2, ShieldCheck, Award, FileCheck, SearchX,
+  Sparkles, Upload, Loader2,
   type LucideIcon,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -18,8 +19,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useLocation, Link } from "wouter";
+import { useToast } from "@/hooks/use-toast";
+import { analyzeAndExtractDocument } from "@/lib/documents";
 import { SERVICES_META } from "@/lib/services-data";
 
 /* ─── Form Schema ─────────────────────────────────────────────── */
@@ -86,16 +89,100 @@ export default function Services() {
   const [_, setLocation] = useLocation();
 
   const createCase = useCreateCase();
+  const { toast } = useToast();
+  const cinInputRef = useRef<HTMLInputElement>(null);
+  const [isScanningCin, setIsScanningCin] = useState(false);
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: { applicantName: "", applicantEmail: "", applicantPhone: "", notes: "" },
   });
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
+  // Check for pre-filled data passed from chat.tsx (Feature 2 Task 2.2)
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("omniagent_prefill");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.applicantName) {
+          form.setValue("applicantName", parsed.applicantName);
+        }
+        const notesExtra = [
+          parsed.cinNumber ? `CIN: ${parsed.cinNumber}` : "",
+          parsed.address ? `Adresse: ${parsed.address}` : "",
+          parsed.birthDate ? `Né(e) le: ${parsed.birthDate}` : "",
+        ].filter(Boolean).join(" | ");
+        if (notesExtra) {
+          form.setValue("notes", notesExtra);
+        }
+
+        // Auto-open first service dialog if none opened
+        if (!selectedService && services && services.length > 0) {
+          setSelectedService(services[0]);
+          toast({
+            title: language === "fr" ? "Données pré-remplies !" : "تم ملء البيانات تلقائياً!",
+            description:
+              language === "fr"
+                ? `Les informations de votre ${parsed.documentType || "CIN"} ont été appliquées.`
+                : "تم استخدام معلومات بطاقتك الوطنية بنجاح.",
+          });
+          sessionStorage.removeItem("omniagent_prefill");
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [services, selectedService, form, language, toast]);
+
+  const handleCinScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    setIsScanningCin(true);
+    try {
+      const data = await analyzeAndExtractDocument(file, language);
+      if (data.full_name) {
+        form.setValue("applicantName", data.full_name);
+      } else if (data.first_name || data.last_name) {
+        form.setValue("applicantName", `${data.first_name || ""} ${data.last_name || ""}`.trim());
+      }
+      const notesParts = [
+        data.cin_number ? `CIN: ${data.cin_number}` : "",
+        data.address ? `Adresse: ${data.address}` : "",
+        data.birth_date ? `Né(e) le: ${data.birth_date}` : "",
+      ].filter(Boolean).join(" | ");
+      if (notesParts) {
+        const currentNotes = form.getValues("notes") || "";
+        form.setValue("notes", currentNotes ? `${currentNotes}\n${notesParts}` : notesParts);
+      }
+
+      toast({
+        title: language === "fr" ? "CIN analysée avec succès !" : "تم فحص البطاقة بنجاح!",
+        description:
+          language === "fr"
+            ? `Nom: ${form.getValues("applicantName")} · Confiance: ${Math.round(data.confidence_score * 100)}%`
+            : "تم ملء الحقول بالبيانات المستخرجة.",
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Erreur de scan" : "خطأ في فحص الوثيقة",
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setIsScanningCin(false);
+    }
+  };
+
+  const onSubmit = (values: z.infer<typeof formSchema>, submit = true) => {
     if (!selectedService) return;
     createCase.mutate(
-      { data: { ...values, serviceId: selectedService.id } },
-      { onSuccess: (newCase) => { setSelectedService(null); setLocation(`/cases/${newCase.id}`); } }
+      { data: { ...values, serviceId: selectedService.id, submit } },
+      {
+        onSuccess: (newCase) => { setSelectedService(null); setLocation(`/cases/${newCase.id}`); },
+        onError: (error) => toast({ variant: "destructive", title: language === "fr" ? "Demande impossible" : "تعذر إنشاء الطلب", description: error.message }),
+      }
     );
   };
 
@@ -482,7 +569,49 @@ export default function Services() {
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit((values) => onSubmit(values, true))} className="space-y-4">
+              {/* Feature 2: Smart OCR Auto-fill Button */}
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-foreground">
+                      {language === "fr" ? "Auto-remplir avec ma CIN" : "ملء تلقائي عبر البطاقة الوطنية"}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {language === "fr" ? "Scannez votre CIN pour remplir en 1 clic" : "فحص ذكي للبطاقة لملء البيانات فوراً"}
+                    </p>
+                  </div>
+                </div>
+                <input
+                  ref={cinInputRef}
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handleCinScan}
+                  data-testid="input-scan-cin"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={isScanningCin}
+                  onClick={() => cinInputRef.current?.click()}
+                  className="shrink-0 text-xs gap-1.5 h-8 border-primary/30 hover:bg-primary/10 text-primary font-medium"
+                >
+                  {isScanningCin ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
+                  {isScanningCin
+                    ? (language === "fr" ? "Scan en cours…" : "جاري الفحص…")
+                    : (language === "fr" ? "Scanner" : "فحص")}
+                </Button>
+              </div>
+
               {[
                 { name: "applicantName" as const, label: { fr: "Nom complet", ar: "الاسم الكامل" }, placeholder: "Ahmed Benali" },
                 { name: "applicantEmail" as const, label: { fr: "Email", ar: "البريد الإلكتروني" }, type: "email", placeholder: "ahmed@example.ma" },
@@ -517,6 +646,10 @@ export default function Services() {
               <DialogFooter className="pt-2">
                 <Button type="button" variant="outline" onClick={() => setSelectedService(null)}>
                   {language === "fr" ? "Annuler" : "إلغاء"}
+                </Button>
+                <Button type="button" variant="secondary" disabled={createCase.isPending}
+                  onClick={form.handleSubmit((values) => onSubmit(values, false))}>
+                  {language === "fr" ? "Enregistrer brouillon" : "حفظ كمسودة"}
                 </Button>
                 <Button type="submit" disabled={createCase.isPending} className="bg-primary hover:bg-primary/90 text-primary-foreground">
                   {createCase.isPending
