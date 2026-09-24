@@ -19,7 +19,12 @@ def test_second_chat_turn_receives_previous_exchange(client, monkeypatch):
         captured_histories.append(kwargs.get("conversation_history"))
         return KnowledgeAnswer(answer="remembered answer", confidence=1.0, sources=["test"])
 
+    def fake_query_rag(user_query, service_type=None, conversation_history=None):
+        ans = fake_answer(user_message=user_query, conversation_history=conversation_history)
+        return {"answer": ans.answer, "confidence": ans.confidence, "sources": ans.sources, "language": "darija"}
+
     monkeypatch.setattr("app.api.omni.answer_with_metadata", fake_answer)
+    monkeypatch.setattr("app.rag_service.query_rag", fake_query_rag)
 
     first = client.post(
         "/api/chat/messages",

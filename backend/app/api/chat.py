@@ -12,6 +12,7 @@ from app.services.audio_service import (
     get_browser_voice_config,
     sanitize_for_voice,
     synthesize_speech,
+    synthesize_speech_async,
     transcribe_audio,
 )
 from app.core.config import settings
@@ -193,7 +194,7 @@ async def voice_synthesize(body: VoiceSynthesizeRequest):
         )
 
     try:
-        mp3_bytes = synthesize_speech(clean_text, body.language)
+        mp3_bytes = await synthesize_speech_async(clean_text, body.language)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

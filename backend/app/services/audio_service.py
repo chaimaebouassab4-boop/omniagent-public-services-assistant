@@ -13,7 +13,17 @@ import base64
 import io
 import logging
 import re
+import site
+import sys
 from typing import Any
+
+# Ensure user site-packages directory is on sys.path for packages installed with --user
+try:
+    user_site = site.getusersitepackages()
+    if user_site and user_site not in sys.path:
+        sys.path.insert(0, user_site)
+except Exception:
+    pass
 
 try:
     import google.generativeai as genai  # type: ignore
@@ -346,15 +356,15 @@ def _convert_tables_to_spoken(text: str, language: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════ #
-#  Text-to-Speech Synthesis
+#  Text-to-Speech Synthesis (Edge-TTS + gTTS fallback)
 # ═══════════════════════════════════════════════════════════════════════════ #
 
-def synthesize_speech(text: str, language: str = "ar") -> bytes:
-    """Generate MP3 audio bytes from text using gTTS.
+async def synthesize_speech_async(text: str, language: str = "ar") -> bytes:
+    """Generate MP3 audio bytes using Edge TTS (Microsoft Neural voices) with gTTS fallback.
 
     Args:
         text: The text to speak (should already be sanitized for voice).
-        language: Language code — ``ar`` for Arabic/Darija, ``fr`` for French.
+        language: Language code — ``fr`` for French, ``ar``/``darija`` for Arabic/Darija.
 
     Returns:
         MP3 audio bytes.
@@ -366,25 +376,54 @@ def synthesize_speech(text: str, language: str = "ar") -> bytes:
     if not text or not text.strip():
         raise ValueError("Cannot synthesize empty text.")
 
-    # Map app language codes to gTTS language codes
-    gtts_lang = "fr" if language == "fr" else "ar"
+    clean = text.strip()
+    norm_lang = "fr" if language.lower() in ("fr", "french", "français") else "ar"
 
+    # ── 1. Primary: Edge-TTS (Neural High-Quality Voices) ──
+    try:
+        import edge_tts  # type: ignore
+
+        # French: fr-FR-DeniseNeural | Arabic/Darija: ar-MA-MounaNeural
+        voice = "fr-FR-DeniseNeural" if norm_lang == "fr" else "ar-MA-MounaNeural"
+        communicate = edge_tts.Communicate(clean, voice)
+        buf = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk.get("type") == "audio":
+                buf.write(chunk["data"])
+        audio_bytes = buf.getvalue()
+        if audio_bytes:
+            logger.info("Edge-TTS synthesis OK (%s): %d chars → %d bytes MP3", voice, len(clean), len(audio_bytes))
+            return audio_bytes
+    except Exception as exc:
+        logger.warning("Edge-TTS synthesis failed (%s), trying fallback: %s", norm_lang, exc)
+
+    # ── 2. Fallback: gTTS ──
     try:
         from gtts import gTTS  # type: ignore
 
-        tts = gTTS(text=text.strip(), lang=gtts_lang, slow=False)
+        gtts_lang = "fr" if norm_lang == "fr" else "ar"
+        tts = gTTS(text=clean, lang=gtts_lang, slow=False)
         buf = io.BytesIO()
         tts.write_to_fp(buf)
         buf.seek(0)
         audio_bytes = buf.read()
-        logger.info(
-            "TTS synthesis OK: %d chars → %d bytes MP3 (lang=%s)",
-            len(text), len(audio_bytes), gtts_lang,
-        )
+        logger.info("gTTS fallback synthesis OK: %d chars → %d bytes MP3", len(clean), len(audio_bytes))
         return audio_bytes
     except Exception as exc:
-        logger.exception("TTS synthesis failed")
+        logger.exception("TTS synthesis failed on both Edge-TTS and gTTS")
         raise RuntimeError(f"TTS synthesis failed: {exc}") from exc
+
+
+def synthesize_speech(text: str, language: str = "ar") -> bytes:
+    """Synchronous wrapper for synthesize_speech_async."""
+    import asyncio
+    try:
+        return asyncio.run(synthesize_speech_async(text, language))
+    except RuntimeError:
+        # Loop already running in current thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(lambda: asyncio.run(synthesize_speech_async(text, language))).result()
 
 
 # ═══════════════════════════════════════════════════════════════════════════ #
