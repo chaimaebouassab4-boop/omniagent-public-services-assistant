@@ -1,6 +1,7 @@
 /** Persistent standalone-chat API backed by SQLAlchemy and the RAG service. */
 import { apiUrl } from "@/lib/api-url";
 import { getToken, handleUnauthorized } from "@/lib/auth";
+import type { Language } from "@/lib/i18n";
 
 export interface ChatMessage {
   id: string | number;
@@ -81,4 +82,44 @@ export async function clearChatHistory(): Promise<number> {
     method: "DELETE",
   });
   return result.deleted;
+}
+
+async function voiceError(response: Response): Promise<Error> {
+  const data = await response.json().catch(() => null);
+  handleUnauthorized(response.status);
+  const detail = data?.detail ?? `Erreur audio (HTTP ${response.status})`;
+  return new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+}
+
+export async function transcribeVoice(file: File, language: Language, signal?: AbortSignal): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("language", language);
+  const token = getToken();
+  const response = await fetch(apiUrl("/api/chat/voice-transcribe"), {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+    signal,
+  });
+  if (!response.ok) throw await voiceError(response);
+  const data = await response.json() as { text?: string; error?: string };
+  if (data.error) throw new Error(data.error);
+  if (!data.text?.trim()) throw new Error("Aucune parole reconnue dans l'enregistrement.");
+  return data.text.trim();
+}
+
+export async function synthesizeVoice(text: string, language: Language, signal?: AbortSignal): Promise<Blob> {
+  const token = getToken();
+  const response = await fetch(apiUrl("/api/chat/voice-synthesize"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ text, language }),
+    signal,
+  });
+  if (!response.ok) throw await voiceError(response);
+  return response.blob();
 }

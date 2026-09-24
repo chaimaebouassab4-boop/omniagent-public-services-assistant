@@ -17,15 +17,16 @@ import {
 import {
   Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus,
   History, BookOpen, ShieldCheck, Trash2, Compass, FileCheck2, FolderClock,
-  Sparkles, ArrowUpRight, X, Image as ImageIcon,
+  Sparkles, ArrowUpRight, X, Image as ImageIcon, Volume2, Square,
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { uploadChatDocument, validateFile } from "@/lib/documents";
-import { listChatSessions, listSessionMessages, sendSessionMessage, deleteChatSession } from "@/lib/chat";
+import { listChatSessions, listSessionMessages, sendSessionMessage, deleteChatSession, transcribeVoice, synthesizeVoice } from "@/lib/chat";
 import type { ChatMessage } from "@/lib/chat";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
+import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 
 const DOCUMENT_PREFIX = "[Document] ";
 
@@ -43,11 +44,119 @@ export default function Chat() {
   const [messageInput, setMessageInput] = useState("");
   const [stagedFile, setStagedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [playback, setPlayback] = useState<{ messageId: string; state: "loading" | "playing" } | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   /** Optimistic messages shown while waiting for RAG response */
   const [pendingUserMsg, setPendingUserMsg] = useState<ChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const transcriptionAbortRef = useRef<AbortController | null>(null);
+  const playbackRef = useRef<{ controller: AbortController; audio: HTMLAudioElement | null; url: string | null } | null>(null);
+  const recorder = useAudioRecorder();
+
+  const stopPlayback = useCallback(() => {
+    const current = playbackRef.current;
+    playbackRef.current = null;
+    current?.controller.abort();
+    if (current?.audio) {
+      current.audio.onended = null;
+      current.audio.onerror = null;
+      current.audio.pause();
+      current.audio.removeAttribute("src");
+      current.audio.load();
+    }
+    if (current?.url) URL.revokeObjectURL(current.url);
+    setPlayback(null);
+  }, []);
+
+  const playMessage = useCallback(async (message: ChatMessage) => {
+    const messageId = String(message.id);
+    if (playback?.messageId === messageId) {
+      stopPlayback();
+      return;
+    }
+    stopPlayback();
+    const controller = new AbortController();
+    const current = { controller, audio: null as HTMLAudioElement | null, url: null as string | null };
+    playbackRef.current = current;
+    setPlayback({ messageId, state: "loading" });
+    try {
+      const blob = await synthesizeVoice(message.content, language, controller.signal);
+      if (controller.signal.aborted) return;
+      current.url = URL.createObjectURL(blob);
+      current.audio = new Audio(current.url);
+      current.audio.onended = () => {
+        if (playbackRef.current === current) stopPlayback();
+      };
+      current.audio.onerror = () => {
+        if (playbackRef.current !== current) return;
+        stopPlayback();
+        toast({ variant: "destructive", title: language === "fr" ? "Lecture impossible" : "تعذر تشغيل الصوت" });
+      };
+      await current.audio.play();
+      if (!controller.signal.aborted) setPlayback({ messageId, state: "playing" });
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        stopPlayback();
+        toast({
+          variant: "destructive",
+          title: language === "fr" ? "Lecture impossible" : "تعذر تشغيل الصوت",
+          description: error instanceof Error ? error.message : undefined,
+        });
+      }
+    }
+  }, [language, playback?.messageId, stopPlayback, toast]);
+
+  useEffect(() => {
+    recorder.cancel();
+    transcriptionAbortRef.current?.abort();
+    transcriptionAbortRef.current = null;
+    setIsTranscribing(false);
+    stopPlayback();
+  }, [activeSessionId]); // Switches must not put a transcript or audio playback in another conversation.
+
+  useEffect(() => () => {
+    transcriptionAbortRef.current?.abort();
+    stopPlayback();
+  }, [stopPlayback]);
+
+  const handleStartRecording = async () => {
+    try {
+      await recorder.start();
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: language === "fr" ? "Microphone indisponible" : "الميكروفون غير متاح",
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  };
+
+  const handleStopRecording = async () => {
+    setIsTranscribing(true);
+    const controller = new AbortController();
+    transcriptionAbortRef.current = controller;
+    try {
+      const file = await recorder.stop();
+      if (controller.signal.aborted) return;
+      const text = await transcribeVoice(file, language, controller.signal);
+      if (!controller.signal.aborted) setMessageInput((previous) => [previous.trim(), text].filter(Boolean).join(" "));
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        toast({
+          variant: "destructive",
+          title: language === "fr" ? "Transcription impossible" : "تعذر تحويل الصوت إلى نص",
+          description: error instanceof Error ? error.message : undefined,
+        });
+      }
+    } finally {
+      if (transcriptionAbortRef.current === controller) {
+        transcriptionAbortRef.current = null;
+        setIsTranscribing(false);
+      }
+    }
+  };
 
   const { data: sessions = [], isSuccess: sessionsLoaded } = useQuery({
     queryKey: ["chat-sessions"],
@@ -405,6 +514,26 @@ export default function Chat() {
                         role={msg.role as "user" | "assistant"}
                         isRtl={isRtl}
                       />
+                      {msg.role === "assistant" && (
+                        <button
+                          type="button"
+                          onClick={() => void playMessage(msg)}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          aria-label={playback?.messageId === String(msg.id)
+                            ? (language === "fr" ? "Arrêter la lecture" : "إيقاف القراءة")
+                            : (language === "fr" ? "Écouter la réponse" : "استمع إلى الرد")}
+                          aria-pressed={playback?.messageId === String(msg.id)}
+                        >
+                          {playback?.messageId === String(msg.id) && playback.state === "loading"
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : playback?.messageId === String(msg.id)
+                            ? <Square className="h-4 w-4 fill-current" />
+                            : <Volume2 className="h-4 w-4" />}
+                          <span>{playback?.messageId === String(msg.id)
+                            ? (language === "fr" ? "Arrêter" : "إيقاف")
+                            : (language === "fr" ? "Écouter" : "استمع")}</span>
+                        </button>
+                      )}
                       {/* RAG metadata for assistant messages */}
                       {msg.role === 'assistant' && (msg.confidence != null || (msg.sources && msg.sources.length > 0)) && (
                         <div className="mt-3 pt-2 border-t border-border/40 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
@@ -510,7 +639,35 @@ export default function Chat() {
                   </Button>
                 </div>
               )}
-              <form onSubmit={handleSendMessage} className="flex gap-2.5">
+              {recorder.status !== "idle" || isTranscribing ? (
+                <div className="flex items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-2 min-h-14" role="status" aria-live="polite">
+                  <span className={`h-3 w-3 shrink-0 rounded-full bg-destructive ${recorder.status === "recording" ? "animate-pulse" : ""}`} aria-hidden="true" />
+                  <span className="flex-1 text-sm font-medium">
+                    {isTranscribing
+                      ? (language === "fr" ? "Transcription en cours…" : "جاري تحويل الصوت إلى نص…")
+                      : recorder.status === "requesting"
+                      ? (language === "fr" ? "Autorisation du microphone…" : "جاري طلب إذن الميكروفون…")
+                      : recorder.status === "stopping"
+                      ? (language === "fr" ? "Préparation de l'audio…" : "جاري تجهيز الصوت…")
+                      : `${language === "fr" ? "Enregistrement" : "تسجيل"}  ${String(Math.floor(recorder.duration / 60)).padStart(2, "0")}:${String(recorder.duration % 60).padStart(2, "0")}`}
+                  </span>
+                  {!isTranscribing && (
+                    <Button type="button" variant="ghost" size="icon" onClick={recorder.cancel}
+                      title={language === "fr" ? "Annuler l'enregistrement" : "إلغاء التسجيل"}
+                      aria-label={language === "fr" ? "Annuler l'enregistrement" : "إلغاء التسجيل"}>
+                      <X className="h-5 w-5" />
+                    </Button>
+                  )}
+                  {recorder.status === "recording" && (
+                    <Button type="button" onClick={() => void handleStopRecording()} className="gap-2 rounded-lg"
+                      aria-label={language === "fr" ? "Arrêter et transcrire" : "إيقاف التسجيل وتحويله إلى نص"}>
+                      <Square className="h-4 w-4 fill-current" />
+                      {language === "fr" ? "Terminer" : "إنهاء"}
+                    </Button>
+                  )}
+                  {isTranscribing && <Loader2 className="h-5 w-5 animate-spin text-primary" aria-hidden="true" />}
+                </div>
+              ) : <form onSubmit={handleSendMessage} className="flex gap-2.5">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -536,7 +693,11 @@ export default function Chat() {
                 >
                   {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                 </Button>
-                <Button type="button" variant="outline" size="icon" className="shrink-0 w-12 h-12 rounded-xl text-muted-foreground">
+                <Button type="button" variant="outline" size="icon" className="shrink-0 w-12 h-12 rounded-xl text-muted-foreground"
+                  onClick={() => void handleStartRecording()}
+                  disabled={isUploading || sendChatMessage.isPending}
+                  title={language === "fr" ? "Enregistrer un message vocal" : "تسجيل رسالة صوتية"}
+                  aria-label={language === "fr" ? "Enregistrer un message vocal" : "تسجيل رسالة صوتية"}>
                   <Mic className="w-5 h-5" />
                 </Button>
                 <Input 
@@ -562,7 +723,7 @@ export default function Chat() {
                     <Send className={`w-5 h-5 ${isRtl ? 'rotate-180' : ''}`} />
                   )}
                 </Button>
-              </form>
+              </form>}
             </div>
           </CardContent>
           </Card>
