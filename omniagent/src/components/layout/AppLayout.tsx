@@ -139,8 +139,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className={`min-h-screen flex w-full ${isRtl ? 'flex-row-reverse' : ''}`}>
-        <Sidebar className="border-r border-sidebar-border bg-sidebar">
+      <div className="min-h-screen flex w-full [&_[data-slot=sidebar-gap]]:hidden">
+        <Sidebar dir={isRtl ? "rtl" : "ltr"} side={isRtl ? "right" : "left"} className="bg-sidebar">
           <SidebarContent>
             {/* Header with Title, ThemeToggle and Notification Bell */}
             <div className="p-4 py-5 border-b border-sidebar-border flex items-center justify-between gap-2">
@@ -298,10 +298,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </SidebarGroup>
           </SidebarContent>
         </Sidebar>
-        <main className="flex-1 flex flex-col bg-background relative z-0 min-w-0">
+        <main
+          dir={isRtl ? "rtl" : "ltr"}
+          className={`flex-1 flex flex-col bg-background relative z-0 min-w-0 ${
+            isRtl ? "md:pr-[var(--sidebar-width)]" : "md:pl-[var(--sidebar-width)]"
+          }`}
+        >
           {/* Mobile Top Bar */}
           <div className="md:hidden flex items-center justify-between px-4 py-2.5 border-b border-border bg-card/70 backdrop-blur sticky top-0 z-40">
-            <SidebarTrigger />
+            <SidebarTrigger className={isRtl ? "[&>svg]:rotate-180" : ""} />
             <div className="flex items-center gap-1">
               <ThemeToggle />
             </div>
