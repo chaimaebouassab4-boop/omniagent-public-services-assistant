@@ -5,6 +5,7 @@ camelCase fields and numeric ids. This router serves that exact contract on the
 `/api/*` paths the frontend calls, backed by the existing SQLAlchemy models and
 the knowledge-base answer engine.
 """
+import asyncio
 import re
 import uuid
 from datetime import datetime, timedelta
@@ -996,7 +997,9 @@ async def analyze_and_extract_document(
     safe_name = _sanitize_filename(file.filename)
     lang = language if language in MESSAGE_LANGUAGES else "darija"
 
-    extracted = extract_structured_metadata(
+    # Gemini is synchronous; keep its bounded network call off the ASGI loop.
+    extracted = await asyncio.to_thread(
+        extract_structured_metadata,
         file_bytes=file_bytes,
         content_type=content_type,
         filename=safe_name,
@@ -1054,7 +1057,9 @@ async def upload_chat_document(
     trimmed_msg = (message or "").strip()
 
     # ── Run Smart Document Analysis (OCR + LLM) ───────────────────────────────
-    analysis = analyze_document(
+    # Gemini is synchronous; keep its bounded network call off the ASGI loop.
+    analysis = await asyncio.to_thread(
+        analyze_document,
         file_bytes=file_bytes,
         content_type=content_type,
         filename=safe_name,

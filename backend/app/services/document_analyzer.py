@@ -19,13 +19,18 @@ Supported languages for the response: darija · arabic · fr
 
 from __future__ import annotations
 
-import base64
 from datetime import datetime
 import io
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Optional, Any
+
+from app.services.gemini_client import GeminiRequestError, binary_part, generate_text
+
+
+logger = logging.getLogger(__name__)
 
 
 # ─── Moroccan Document Analysis Prompts (3 languages) ────────────────────────
@@ -274,46 +279,25 @@ def _pdf_first_page_as_png(data: bytes) -> Optional[bytes]:
 def _ocr_with_gemini(image_bytes: bytes, mime: str, api_key: str, model: str) -> str:
     """Call Gemini Vision multimodal API to extract raw text from an image/PDF."""
     if not api_key:
-        print("[WARN] Gemini Vision OCR skipped: GOOGLE_API_KEY is not set.")
+        logger.warning("Gemini Vision OCR skipped: GOOGLE_API_KEY is not set")
         return ""
     try:
-        import google.generativeai as genai  # type: ignore
-        from google.generativeai.types import HarmCategory, HarmBlockThreshold
-
-        genai.configure(api_key=api_key)
-        encoded = base64.b64encode(image_bytes).decode("utf-8")
         prompt_text = (
             "Extract ALL text from this document exactly as it appears. "
             "Preserve Arabic (Darija and MSA), French, numbers, dates, stamps, "
             "and any special characters. "
             "Do NOT translate, summarise, or add commentary — output raw text only."
         )
-        # Build structured parts
-        parts = [
-            {"inline_data": {"mime_type": mime, "data": encoded}},
-            prompt_text,
-        ]
-        m = genai.GenerativeModel(
-            model,
-            safety_settings={
-                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-            },
+        text = generate_text(
+            api_key=api_key,
+            model=model,
+            contents=[binary_part(image_bytes, mime), prompt_text],
+            temperature=0.0,
         )
-        response = m.generate_content(parts)
-        try:
-            text = (response.text or "").strip()
-            if text:
-                print(f"[OK] Gemini Vision OCR: extracted {len(text)} chars.")
-            return text
-        except (AttributeError, ValueError) as ve:
-            # Response blocked or no parts — log and return empty
-            print(f"[WARN] Gemini Vision: no text in response ({ve})")
-            return ""
+        logger.info("Gemini Vision OCR extracted %d chars", len(text))
+        return text
     except Exception as exc:
-        print(f"[WARN] Gemini Vision OCR failed: {exc}")
+        logger.warning("Gemini Vision OCR unavailable; using local fallback: %s", exc)
         return ""
 
 
@@ -339,59 +323,38 @@ def _analyze_with_gemini_sdk(
             user_query_instruction = f"👉 **سؤال / رسالة المواطن** : \"{user_query.strip()}\"\nجاوب على هاد السؤال بالخصوص في التحليل ديالك.\n\n"
 
     try:
-        import google.generativeai as genai  # type: ignore
-
-        genai.configure(api_key=api_key)
-        m = genai.GenerativeModel(model, system_instruction=prompts["system"])
         prompt_text = prompts["analyze"].format(
             text=text[:6000],
             user_query_instruction=user_query_instruction,
         )
-        response = m.generate_content(prompt_text)
-        try:
-            return (response.text or "").strip()
-        except (AttributeError, ValueError):
-            return ""
-    except Exception as exc:
-        print(f"[WARN] Gemini analysis failed: {exc}")
+        return generate_text(
+            api_key=api_key,
+            model=model,
+            contents=prompt_text,
+            system_instruction=prompts["system"],
+            temperature=0.1,
+        )
+    except GeminiRequestError as exc:
+        logger.warning("Gemini document analysis unavailable; using deterministic fallback: %s", exc)
         return ""
 
 
-def _analyze_with_llamaindex_llm(
+def _deterministic_document_summary(
     text: str,
     lang: str,
     user_query: str = "",
 ) -> str:
-    """Fallback: use google-generativeai directly (no LlamaIndex)."""
-    prompts = _DOCUMENT_PROMPTS[lang]
-    user_query_instruction = ""
-    if user_query and user_query.strip():
-        if lang == "fr":
-            user_query_instruction = f"Question du citoyen : \"{user_query.strip()}\"\nRepondez a cette question.\n\n"
-        else:
-            user_query_instruction = f"سؤال المواطن : \"{user_query.strip()}\"\n\n"
-
-    try:
-        import google.generativeai as genai
-        import os
-
-        api_key = os.getenv("GOOGLE_API_KEY", "").strip()
-        model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
-        if not api_key:
-            return ""
-
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name=model_name)
-        prompt_text = prompts["analyze"].format(
-            text=text[:4000],
-            user_query_instruction=user_query_instruction,
-        )
-        full_prompt = prompts["system"] + "\n\n" + prompt_text
-        response = model.generate_content(full_prompt)
-        return (response.text or "").strip()
-    except Exception as exc:
-        print(f"[WARN] Gemini fallback analysis failed: {exc}")
+    """Return a stable local summary when the external model is unavailable."""
+    compact_text = " ".join(text.split())[:700]
+    if not compact_text:
         return ""
+    if lang == "fr":
+        prefix = "L’analyse IA est temporairement indisponible. Voici le texte extrait localement :"
+    elif lang == "arabic":
+        prefix = "التحليل الذكي غير متاح مؤقتاً. هذا هو النص المستخرج محلياً:"
+    else:
+        prefix = "التحليل الذكي ما متوفرش مؤقتاً. هادا هو النص اللي تخرج محلياً:"
+    return f"{prefix}\n\n> {compact_text}"
 
 
 # ─── Public Entry Point ───────────────────────────────────────────────────────
@@ -463,7 +426,7 @@ def analyze_document(
                 extracted_text, lang, google_api_key, gemini_model_name, user_query=user_query
             )
         if not result.llm_analysis:
-            result.llm_analysis = _analyze_with_llamaindex_llm(
+            result.llm_analysis = _deterministic_document_summary(
                 extracted_text, lang, user_query=user_query
             )
 
@@ -817,28 +780,17 @@ def extract_structured_metadata(
     # 2. Try Gemini Multimodal Structured JSON Extraction if API key is present
     if google_api_key:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=google_api_key)
-
-            model = genai.GenerativeModel(
-                gemini_model_name,
-                system_instruction=_STRUCTURED_JSON_SYSTEM_PROMPT,
-                generation_config={"response_mime_type": "application/json"},
-            )
-
             # Pass image bytes directly for high-precision vision extraction
             if content_type.startswith("image/"):
-                b64 = base64.b64encode(file_bytes).decode("utf-8")
                 parts = [
-                    {"inline_data": {"mime_type": content_type, "data": b64}},
+                    binary_part(file_bytes, content_type),
                     _STRUCTURED_JSON_USER_PROMPT,
                 ]
             elif content_type == "application/pdf":
                 img_bytes = _pdf_first_page_as_png(file_bytes)
                 if img_bytes:
-                    b64 = base64.b64encode(img_bytes).decode("utf-8")
                     parts = [
-                        {"inline_data": {"mime_type": "image/png", "data": b64}},
+                        binary_part(img_bytes, "image/png"),
                         _STRUCTURED_JSON_USER_PROMPT,
                     ]
                 else:
@@ -850,8 +802,15 @@ def extract_structured_metadata(
                     f"{_STRUCTURED_JSON_USER_PROMPT}\n\nDocument Text Content:\n{extracted_text[:6000]}"
                 ]
 
-            response = model.generate_content(parts)
-            raw_json = _clean_json_str(response.text or "")
+            response_text = generate_text(
+                api_key=google_api_key,
+                model=gemini_model_name,
+                contents=parts,
+                system_instruction=_STRUCTURED_JSON_SYSTEM_PROMPT,
+                temperature=0.0,
+                response_mime_type="application/json",
+            )
+            raw_json = _clean_json_str(response_text)
             if raw_json:
                 data = json.loads(raw_json)
                 doc_type = data.get("document_type") or "other"
@@ -891,7 +850,7 @@ def extract_structured_metadata(
                     page_count=page_count,
                 )
         except Exception as exc:
-            print(f"[WARN] Gemini structured extraction failed, falling back to heuristics: {exc}")
+            logger.warning("Gemini structured extraction failed; using heuristics: %s", exc)
 
     # 3. Fallback Heuristics
     return _heuristic_structured_extract(

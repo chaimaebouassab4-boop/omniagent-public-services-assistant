@@ -3,13 +3,13 @@
 Handles:
   - Speech-to-Text (STT) via Gemini Flash Audio
   - Voice-ready text sanitization (strip markdown, tables, links, emojis)
-  - Text-to-Speech (TTS) via gTTS
+  - Text-to-Speech (TTS) via Edge-TTS with gTTS fallback
   - Browser Web Speech API configuration hints
 """
 
 from __future__ import annotations
 
-import base64
+import asyncio
 import io
 import logging
 import re
@@ -25,14 +25,25 @@ try:
 except Exception:
     pass
 
-try:
-    import google.generativeai as genai  # type: ignore
-except ImportError:
-    genai = None
-
 from app.core.config import settings
+from app.services.gemini_client import GeminiRequestError, binary_part, generate_text
 
 logger = logging.getLogger(__name__)
+
+
+def _unavailable_message(language: str, service: str) -> str:
+    is_french = language.lower() in ("fr", "french", "français")
+    if service == "transcription":
+        return (
+            "La transcription est temporairement indisponible. Réessayez dans quelques instants."
+            if is_french
+            else "تحويل الصوت إلى نص ما متوفرش مؤقتاً. عاود المحاولة من بعد شوية."
+        )
+    return (
+        "La lecture audio est temporairement indisponible. Réessayez dans quelques instants."
+        if is_french
+        else "القراءة الصوتية ما متوفراش مؤقتاً. عاود المحاولة من بعد شوية."
+    )
 
 # ── Supported audio MIME types ──────────────────────────────────────────────
 ALLOWED_AUDIO_MIMES = {
@@ -123,14 +134,6 @@ def transcribe_audio(
             "error": "Empty audio file.",
         }
 
-    if genai is None:
-        return {
-            "text": "",
-            "language": language_hint,
-            "confidence": 0.0,
-            "error": "google-generativeai package is not installed on the server.",
-        }
-
     api_key = settings.google_api_key
     if not api_key:
         return {
@@ -141,12 +144,6 @@ def transcribe_audio(
         }
 
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            settings.gemini_audio_model,
-            system_instruction=_TRANSCRIBE_SYSTEM_PROMPT,
-        )
-
         # Build language hint addendum
         lang_map = {
             "darija": "The speaker is likely using Moroccan Darija (الدارجة). "
@@ -158,15 +155,16 @@ def transcribe_audio(
         }
         hint = lang_map.get(language_hint, lang_map["darija"])
 
-        response = model.generate_content(
-            [
-                {"mime_type": mime_type, "data": audio_bytes},
+        transcription = generate_text(
+            api_key=api_key,
+            model=settings.gemini_audio_model,
+            system_instruction=_TRANSCRIBE_SYSTEM_PROMPT,
+            contents=[
+                binary_part(audio_bytes, mime_type),
                 f"Transcribe this audio. {hint}",
             ],
-            generation_config=genai.GenerationConfig(temperature=0.0),
+            temperature=0.0,
         )
-
-        transcription = (response.text or "").strip()
 
         if not transcription or transcription == "[SILENCE]":
             return {
@@ -185,13 +183,13 @@ def transcribe_audio(
             "confidence": 0.92,  # Gemini Flash heuristic baseline
             "error": None,
         }
-    except Exception as exc:
-        logger.exception("Audio transcription failed")
+    except GeminiRequestError as exc:
+        logger.warning("Audio transcription unavailable: %s", exc)
         return {
             "text": "",
             "language": language_hint,
             "confidence": 0.0,
-            "error": f"Transcription failed: {exc}",
+            "error": _unavailable_message(language_hint, "transcription"),
         }
 
 
@@ -359,6 +357,35 @@ def _convert_tables_to_spoken(text: str, language: str) -> str:
 #  Text-to-Speech Synthesis (Edge-TTS + gTTS fallback)
 # ═══════════════════════════════════════════════════════════════════════════ #
 
+async def _synthesize_with_edge(text: str, voice: str) -> bytes:
+    import edge_tts  # type: ignore
+
+    communicate = edge_tts.Communicate(
+        text,
+        voice,
+        connect_timeout=20,
+        receive_timeout=20,
+    )
+    buf = io.BytesIO()
+    async with asyncio.timeout(20):
+        async for chunk in communicate.stream():
+            if chunk.get("type") == "audio":
+                buf.write(chunk["data"])
+    return buf.getvalue()
+
+
+async def _synthesize_with_gtts(text: str, language: str) -> bytes:
+    from gtts import gTTS  # type: ignore
+
+    def _generate() -> bytes:
+        tts = gTTS(text=text, lang=language, slow=False, timeout=20)
+        buf = io.BytesIO()
+        tts.write_to_fp(buf)
+        return buf.getvalue()
+
+    return await asyncio.wait_for(asyncio.to_thread(_generate), timeout=25)
+
+
 async def synthesize_speech_async(text: str, language: str = "ar") -> bytes:
     """Generate MP3 audio bytes using Edge TTS (Microsoft Neural voices) with gTTS fallback.
 
@@ -380,50 +407,51 @@ async def synthesize_speech_async(text: str, language: str = "ar") -> bytes:
     norm_lang = "fr" if language.lower() in ("fr", "french", "français") else "ar"
 
     # ── 1. Primary: Edge-TTS (Neural High-Quality Voices) ──
+    edge_error: Exception | None = None
     try:
-        import edge_tts  # type: ignore
-
         # French: fr-FR-DeniseNeural | Arabic/Darija: ar-MA-MounaNeural
         voice = "fr-FR-DeniseNeural" if norm_lang == "fr" else "ar-MA-MounaNeural"
-        communicate = edge_tts.Communicate(clean, voice)
-        buf = io.BytesIO()
-        async for chunk in communicate.stream():
-            if chunk.get("type") == "audio":
-                buf.write(chunk["data"])
-        audio_bytes = buf.getvalue()
+        audio_bytes = await _synthesize_with_edge(clean, voice)
         if audio_bytes:
             logger.info("Edge-TTS synthesis OK (%s): %d chars → %d bytes MP3", voice, len(clean), len(audio_bytes))
             return audio_bytes
+        raise RuntimeError("Edge-TTS returned empty audio.")
     except Exception as exc:
+        edge_error = exc
         logger.warning("Edge-TTS synthesis failed (%s), trying fallback: %s", norm_lang, exc)
 
     # ── 2. Fallback: gTTS ──
     try:
-        from gtts import gTTS  # type: ignore
-
         gtts_lang = "fr" if norm_lang == "fr" else "ar"
-        tts = gTTS(text=clean, lang=gtts_lang, slow=False)
-        buf = io.BytesIO()
-        tts.write_to_fp(buf)
-        buf.seek(0)
-        audio_bytes = buf.read()
+        audio_bytes = await _synthesize_with_gtts(clean, gtts_lang)
+        if not audio_bytes:
+            raise RuntimeError("gTTS returned empty audio.")
         logger.info("gTTS fallback synthesis OK: %d chars → %d bytes MP3", len(clean), len(audio_bytes))
         return audio_bytes
-    except Exception as exc:
-        logger.exception("TTS synthesis failed on both Edge-TTS and gTTS")
-        raise RuntimeError(f"TTS synthesis failed: {exc}") from exc
+    except Exception as fallback_error:
+        logger.error(
+            "All TTS providers failed (Edge-TTS=%r, gTTS=%r)",
+            edge_error,
+            fallback_error,
+            exc_info=True,
+        )
+        raise RuntimeError(
+            _unavailable_message(language, "tts")
+        ) from fallback_error
 
 
 def synthesize_speech(text: str, language: str = "ar") -> bytes:
     """Synchronous wrapper for synthesize_speech_async."""
-    import asyncio
     try:
-        return asyncio.run(synthesize_speech_async(text, language))
+        asyncio.get_running_loop()
     except RuntimeError:
-        # Loop already running in current thread
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            return pool.submit(lambda: asyncio.run(synthesize_speech_async(text, language))).result()
+        return asyncio.run(synthesize_speech_async(text, language))
+
+    # A loop is already active in this thread; execute the coroutine in a
+    # short-lived worker thread without swallowing provider RuntimeErrors.
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        return pool.submit(lambda: asyncio.run(synthesize_speech_async(text, language))).result()
 
 
 # ═══════════════════════════════════════════════════════════════════════════ #

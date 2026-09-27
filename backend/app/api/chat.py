@@ -1,4 +1,5 @@
 from typing import Optional, List
+import asyncio
 import base64
 import logging
 
@@ -155,7 +156,8 @@ async def voice_transcribe(
         raise HTTPException(status_code=400, detail="Empty audio file.")
 
     # ── Transcribe ──
-    result = transcribe_audio(
+    result = await asyncio.to_thread(
+        transcribe_audio,
         audio_bytes=audio_bytes,
         mime_type=resolved_mime,
         language_hint=language,
@@ -196,7 +198,8 @@ async def voice_synthesize(body: VoiceSynthesizeRequest):
     try:
         mp3_bytes = await synthesize_speech_async(clean_text, body.language)
     except (ValueError, RuntimeError) as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.warning("Voice synthesis request failed: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return Response(
         content=mp3_bytes,

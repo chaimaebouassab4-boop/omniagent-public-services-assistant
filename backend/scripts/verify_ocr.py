@@ -18,6 +18,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
 from app.core.config import settings
+from app.services.gemini_client import GeminiRequestError, generate_text
 
 def test_gemini():
     print("=" * 60)
@@ -41,13 +42,15 @@ def test_gemini():
     # 1. Test Gemini Text
     print("\n[1/2] Test de connexion a Gemini API...")
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(settings.gemini_model)
-        res = model.generate_content("Reponds simplement 'OK' en un mot.")
-        print(f"  Reponse Gemini : {res.text.strip()}")
+        response_text = generate_text(
+            api_key=api_key,
+            model=settings.gemini_model,
+            contents="Reponds simplement 'OK' en un mot.",
+            temperature=0.0,
+        )
+        print(f"  Reponse Gemini : {response_text}")
         print("  [OK] Connexion API Gemini validee avec succes!")
-    except Exception as exc:
+    except GeminiRequestError as exc:
         print(f"  [ERREUR] Echec de connexion Gemini : {exc}")
         return False
 
@@ -61,6 +64,8 @@ def test_gemini():
             b'\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
         )
         ocr_result = _ocr_with_gemini(dummy_png, "image/png", api_key, settings.gemini_model)
+        if not ocr_result:
+            raise RuntimeError("Gemini Vision n'a retourne aucun texte")
         print("  [OK] Module OCR Vision operationnel et pret a analyser les images!")
     except Exception as exc:
         print(f"  [ERREUR] Echec du test OCR Vision : {exc}")

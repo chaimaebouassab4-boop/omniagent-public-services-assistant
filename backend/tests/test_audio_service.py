@@ -6,8 +6,11 @@ Run with:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
+
+import pytest
 
 # Ensure the backend package is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -18,6 +21,8 @@ from app.services.audio_service import (
     sanitize_for_voice,
     ALLOWED_AUDIO_MIMES,
 )
+from app.services import audio_service
+from app.services.gemini_client import GeminiRequestError
 
 
 # ═══════════════════════════════════════════════════════════════════════════ #
@@ -202,3 +207,42 @@ class TestAllowedMimes:
 
     def test_text_not_supported(self):
         assert "text/plain" not in ALLOWED_AUDIO_MIMES
+
+
+class TestTtsFallbacks:
+    def test_gtts_is_used_when_edge_fails(self, monkeypatch):
+        async def edge_failure(text, voice):
+            raise RuntimeError("edge offline")
+
+        async def gtts_success(text, language):
+            return b"fake-mp3"
+
+        monkeypatch.setattr(audio_service, "_synthesize_with_edge", edge_failure)
+        monkeypatch.setattr(audio_service, "_synthesize_with_gtts", gtts_success)
+
+        result = asyncio.run(audio_service.synthesize_speech_async("Bonjour", "fr"))
+        assert result == b"fake-mp3"
+
+    def test_clean_user_error_when_all_tts_providers_fail(self, monkeypatch):
+        async def provider_failure(*args):
+            raise RuntimeError("provider offline")
+
+        monkeypatch.setattr(audio_service, "_synthesize_with_edge", provider_failure)
+        monkeypatch.setattr(audio_service, "_synthesize_with_gtts", provider_failure)
+
+        with pytest.raises(RuntimeError, match="temporairement indisponible"):
+            asyncio.run(audio_service.synthesize_speech_async("Bonjour", "fr"))
+
+
+def test_transcription_returns_stable_user_error_when_gemini_fails(monkeypatch):
+    def gemini_failure(**kwargs):
+        raise GeminiRequestError("provider timeout")
+
+    monkeypatch.setattr(audio_service.settings, "google_api_key", "test-key")
+    monkeypatch.setattr(audio_service, "generate_text", gemini_failure)
+
+    result = audio_service.transcribe_audio(b"audio", "audio/webm", "fr")
+
+    assert result["text"] == ""
+    assert result["confidence"] == 0.0
+    assert "temporairement indisponible" in result["error"]

@@ -1,6 +1,6 @@
 """RAG Service Module (OmniAgent RAG) — Lightweight Edition
 
-Pure BM25 + google-generativeai implementation.
+Pure BM25 + google.genai implementation.
 Zero LlamaIndex dependencies — runs within Railway's 512 MB RAM limit.
 
 Architecture:
@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any, Optional, List, Dict, Sequence
 
 from dotenv import load_dotenv
+
+from app.services.gemini_client import GeminiRequestError, generate_text
 
 # Load environment variables from .env if present
 load_dotenv()
@@ -384,12 +386,10 @@ def _normalize_service_filter(service_type: str) -> str:
 
 # ─── Gemini LLM wrapper ─────────────────────────────────────────────────────
 def _create_gemini_model():
-    """Create and configure a google-generativeai GenerativeModel.
+    """Return the current-SDK Gemini configuration.
 
     Returns None if GOOGLE_API_KEY is missing.
     """
-    import google.generativeai as genai
-
     api_key = os.getenv("GOOGLE_API_KEY", "").strip()
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
 
@@ -397,24 +397,24 @@ def _create_gemini_model():
         print("[WARN] GOOGLE_API_KEY not set -- LLM features disabled")
         return None
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name=model_name,
-        generation_config=genai.GenerationConfig(temperature=0.1),
-    )
     print(f"[OK] Gemini model configured: {model_name}")
-    return model
+    return api_key, model_name
 
 
-def _llm_generate(model, prompt: str) -> str:
+def _llm_generate(model_config, prompt: str) -> str:
     """Call Gemini generate_content and return text. Returns '' on failure."""
-    if model is None:
+    if model_config is None:
         return ""
+    api_key, model_name = model_config
     try:
-        response = model.generate_content(prompt)
-        return (response.text or "").strip()
-    except Exception as e:
-        print(f"[WARN] Gemini generate failed: {e}")
+        return generate_text(
+            api_key=api_key,
+            model=model_name,
+            contents=prompt,
+            temperature=0.1,
+        )
+    except GeminiRequestError as exc:
+        print(f"[WARN] Gemini generate failed; using local retrieval fallback: {exc}")
         return ""
 
 

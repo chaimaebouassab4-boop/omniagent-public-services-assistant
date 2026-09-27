@@ -60,8 +60,11 @@ def test_heuristic_irrelevant_document_anomaly():
     assert extracted.is_relevant is False or extracted.document_type in ("irrelevant", "other")
 
 
-def test_api_documents_analyze_extract():
+def test_api_documents_analyze_extract(monkeypatch):
     """Test POST /api/documents/analyze-extract with sample PNG."""
+    # Integration tests must exercise the deterministic fallback without
+    # depending on a live Gemini account or network connectivity.
+    monkeypatch.setattr("app.api.omni.settings.google_api_key", "")
     # Create a tiny 1x1 dummy PNG
     tiny_png = (
         b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
