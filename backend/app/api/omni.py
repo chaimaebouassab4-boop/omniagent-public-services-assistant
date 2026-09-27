@@ -26,7 +26,7 @@ from app.services.knowledge_base import answer_with_metadata, normalize_service_
 from app.services.case_lifecycle import NEXT_ACTIONS, canonical_status, tracking_code, validate_transition
 from app.services.case_notifications import notification_draft
 from app.services.case_receipt import render_case_receipt
-from app.services.demo_personas import prepare_demo_persona
+from app.services.citizen_workflow import snapshot, attach_profile_document, analyze_file
 from app.services.mock_citizens import verify_mock_profile
 
 router = APIRouter(prefix="/api", tags=["omni"])
@@ -77,6 +77,7 @@ ALLOWED_UPLOAD_MIME_TYPES = {
 # Request bodies
 # --------------------------------------------------------------------------- #
 class CreateCaseBody(BaseModel):
+    documentReferences: list[dict[str, str]] = Field(default_factory=list)
     serviceId: int
     applicantName: str
     applicantEmail: str
@@ -170,17 +171,19 @@ def serialize_case(case: Case, include_service: bool = True) -> dict:
         "applicantEmail": case.applicant_email or "",
         "applicantPhone": case.applicant_phone,
         "status": current_status,
+        "profileSnapshot": (case.workflow_data or {}).get("profileSnapshot"),
         "trackingCode": tracking_code(case.public_id, case.created_at),
         "statusHistory": status_history,
         "nextAction": f"Ajoutez la pièce demandée : {requested_action}." if requested_action else NEXT_ACTIONS.get(current_status, {}).get("fr", "Consultez votre dossier."),
         "nextActionAr": f"زيد الوثيقة المطلوبة: {requested_action}." if requested_action else NEXT_ACTIONS.get(current_status, {}).get("ar", "تحقق من ملفك."),
         "notes": case.notes,
-        "submittedAt": case.created_at.isoformat(),
+        "submittedAt": (case.workflow_data or {}).get("submittedAt", case.created_at.isoformat()),
         "updatedAt": case.updated_at.isoformat(),
         "estimatedCompletionDate": estimated,
     }
     if include_service and case.service is not None:
         payload["service"] = serialize_service(case.service)
+        payload["documentChecklist"] = evaluate_case(case)["documentsCheck"]["items"]
     return payload
 
 
@@ -203,6 +206,8 @@ def serialize_document(document: Document, index: int, case_public_id: int) -> d
         "id": index,
         "caseId": case_public_id,
         "name": document.file_name,
+        "documentType": document.doc_type,
+        "analysis": document.analysis,
         "fileType": document.mime_type,
         "fileSize": document.file_size,
         "status": status_map.get(document.validation_status, "pending"),
@@ -266,6 +271,8 @@ def advance_case(db: Session, case: Case, target: str, actor: User) -> None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     previous = canonical_status(case.status)
     case.status = next_step
+    if next_step == "SUBMITTED":
+        snapshot(case, case.user)
     case.updated_at = datetime.utcnow()
     code = tracking_code(case.public_id, case.created_at)
     log_action(db, case.id, "status_changed", actor.id, {
@@ -356,6 +363,8 @@ async def create_case(
     db.add(case)
     db.flush()
     log_action(db, case.id, "created", current_user.id, {"service_id": service.id, "status": "DRAFT"})
+    for reference in body.documentReferences:
+        attach_profile_document(db, case, current_user, reference.get("documentId"), reference.get("requirement"))
     if body.submit:
         advance_case(db, case, "SUBMITTED", current_user)
     db.commit()
@@ -405,7 +414,10 @@ async def get_case_timeline(
         .order_by(AuditLog.created_at.asc())
         .all()
     )
-    return [serialize_timeline_event(log, case.public_id, i + 1) for i, log in enumerate(logs)]
+    return [{**serialize_timeline_event(log, case.public_id, i + 1),
+             "decisionReason": (log.details or {}).get("reason"),
+             "internalNote": (log.details or {}).get("note") if current_user.is_admin else None}
+            for i, log in enumerate(logs) if current_user.is_admin or log.action != "internal_note"]
 
 
 @router.get("/cases/{case_id}/receipt")
@@ -460,6 +472,8 @@ async def upload_case_document(
     case = get_case_or_404(db, case_id, current_user)
 
     content_type = (file.content_type or "").lower()
+    if canonical_status(case.status) not in {"DRAFT", "SUBMITTED", "UNDER_REVIEW", "CHANGES_REQUESTED"}:
+        raise HTTPException(409, "Documents cannot be changed in this status")
     if content_type not in ALLOWED_UPLOAD_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -485,6 +499,7 @@ async def upload_case_document(
     stored_path = upload_dir / f"{uuid.uuid4().hex}_{safe_name}"
     stored_path.write_bytes(file_bytes)
 
+    analysis = await asyncio.to_thread(analyze_file, file_bytes, content_type, safe_name)
     document = Document(
         case_id=case.id,
         doc_type=docType.strip()[:64] or "other",
@@ -493,6 +508,8 @@ async def upload_case_document(
         file_size=len(file_bytes),
         mime_type=content_type,
         validation_status="pending",
+        analysis=analysis,
+        ocr_text=analysis.get("raw_extracted_text", ""),
     )
     db.add(document)
     log_action(
@@ -506,7 +523,7 @@ async def upload_case_document(
         (log for log in case.audit_logs if log.action in {"action_required", "action_resolved", "status_changed"}),
         key=lambda log: log.created_at,
     )
-    if action_events and action_events[-1].action == "action_required":
+    if case.status != "CHANGES_REQUESTED" and action_events and action_events[-1].action == "action_required":
         log_action(db, case.id, "action_resolved", current_user.id, {"file_name": safe_name})
     db.commit()
     db.refresh(document)
@@ -573,8 +590,10 @@ async def delete_case_document(
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
+    if canonical_status(case.status) not in {"DRAFT", "SUBMITTED", "UNDER_REVIEW", "CHANGES_REQUESTED"}:
+        raise HTTPException(409, "Documents cannot be removed in this status")
     file_path = Path(doc.file_path) if doc.file_path else None
-    if file_path and file_path.exists():
+    if file_path and file_path.exists() and not doc.source_profile_document_id:
         file_path.unlink(missing_ok=True)
 
     db.delete(doc)
@@ -1233,7 +1252,7 @@ async def admin_list_cases(
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
-    query = db.query(Case)
+    query = db.query(Case).filter(Case.status != "DRAFT")
     if status_filter:
         query = query.filter(Case.status == status_filter)
     cases = query.order_by(Case.created_at.desc()).all()
@@ -1282,6 +1301,43 @@ async def admin_case_ai_summary(
     return evaluate_case(case)
 
 
+@router.get("/admin/cases/{case_id}")
+async def admin_case_detail(case_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.is_admin:
+        raise HTTPException(403, "Admin access required")
+    return serialize_case(get_case_or_404(db, case_id, current_user))
+
+
+@router.post("/admin/cases/{case_id}/actions/{action}")
+async def admin_review_action(case_id: int, action: str, body: AdminCaseActionBody,
+                              db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.is_admin:
+        raise HTTPException(403, "Admin access required")
+    # Existing approval/change routes retain their validation and audit handling.
+    if action == "approve":
+        return await admin_approve_case(case_id, db, current_user)
+    if action == "request-changes":
+        return await admin_request_case_changes(case_id, body, db, current_user)
+    case = get_case_or_404(db, case_id, current_user)
+    if action == "start-review":
+        advance_case(db, case, "UNDER_REVIEW", current_user)
+        case.workflow_data = {**(case.workflow_data or {}), "assignedAgentId": current_user.id}
+    elif action == "reject":
+        if not (body.reason or "").strip():
+            raise HTTPException(400, "A rejection reason is required")
+        advance_case(db, case, "REJECTED", current_user)
+        log_action(db, case.id, "rejected", current_user.id, {"reason": body.reason})
+    elif action == "note":
+        if not (body.reason or "").strip():
+            raise HTTPException(400, "A note is required")
+        log_action(db, case.id, "internal_note", current_user.id, {"note": body.reason})
+    else:
+        raise HTTPException(404, "Unknown action")
+    db.commit()
+    db.refresh(case)
+    return {"action": action, "case": serialize_case(case)}
+
+
 @router.post("/admin/cases/{case_id}/actions/approve")
 async def admin_approve_case(
     case_id: int,
@@ -1300,7 +1356,7 @@ async def admin_approve_case(
         )
 
     current_status = canonical_status(case.status)
-    if current_status == "SUBMITTED":
+    if current_status in {"SUBMITTED", "RESUBMITTED"}:
         advance_case(db, case, "UNDER_REVIEW", current_user)
         current_status = "UNDER_REVIEW"
     if current_status == "UNDER_REVIEW":
@@ -1338,7 +1394,7 @@ async def admin_request_case_changes(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     case = get_case_or_404(db, case_id, current_user)
     current_status = canonical_status(case.status)
-    if current_status == "SUBMITTED":
+    if current_status in {"SUBMITTED", "RESUBMITTED"}:
         advance_case(db, case, "UNDER_REVIEW", current_user)
     elif current_status != "UNDER_REVIEW":
         raise HTTPException(
@@ -1349,6 +1405,7 @@ async def admin_request_case_changes(
     summary = evaluate_case(case)
     reason = (body.reason or summary["recommendation"]["reasonFr"]).strip()
     default_preview = summary["notificationDraft"]
+    advance_case(db, case, "CHANGES_REQUESTED", current_user)
     preview = {
         "fr": (body.messageFr or default_preview["fr"]).strip(),
         "darija": (body.messageDarija or default_preview["darija"]).strip(),
@@ -1367,24 +1424,6 @@ async def admin_request_case_changes(
         "case": serialize_case(case),
         "notificationPreview": {"channel": "SMS / WhatsApp", **preview},
     }
-
-
-@router.post("/admin/demo-personas/{persona_key}")
-async def admin_activate_demo_persona(
-    persona_key: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> dict:
-    """Create or reset a synthetic presentation case and return its copilot result."""
-    if not current_user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-    try:
-        case, persona = prepare_demo_persona(db, persona_key.lower(), current_user.id)
-    except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown demo persona") from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Demo service unavailable: {exc}") from exc
-    return {"persona": persona, "case": serialize_case(case), "aiSummary": evaluate_case(case)}
 
 
 @router.get("/admin/notifications")

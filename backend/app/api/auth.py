@@ -1,4 +1,5 @@
 import re
+import asyncio
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -17,7 +18,8 @@ from app.core.security import (
     verify_password,
 )
 from app.db.database import get_db
-from app.models import User
+from app.models import User, Document
+from app.services.citizen_workflow import analyze_file, public_documents
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -42,6 +44,8 @@ class SignupRequest(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
+    address: str | None = None
+    preferredLanguage: str | None = None
     fullName: str | None = None
     phone: str | None = None
     notifyEmail: bool | None = None
@@ -57,6 +61,9 @@ def serialize_user(user: User) -> dict:
         "email": user.email,
         "fullName": user.full_name or "",
         "phone": user.phone,
+        "address": (user.profile_data or {}).get("address", ""),
+        "preferredLanguage": (user.profile_data or {}).get("preferredLanguage", "fr"),
+        "reusableDocuments": public_documents(user),
         "isAdmin": user.is_admin,
         "notifyEmail": user.notify_email,
         "notifySms": user.notify_sms,
@@ -117,18 +124,23 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/auth/me")
+@router.get("/me/profile")
 async def get_me(current_user: User = Depends(get_current_user)) -> dict:
     """Return the currently authenticated user's profile."""
     return serialize_user(current_user)
 
 
 @router.patch("/auth/me")
+@router.patch("/me/profile")
 async def update_me(
     request: UpdateProfileRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Update the current user's profile fields."""
+    current_user.profile_data = {**(current_user.profile_data or {}),
+        **request.model_dump(include={"address", "preferredLanguage"}, exclude_none=True),
+        "updatedAt": datetime.now(UTC).isoformat()}
     if request.fullName is not None:
         current_user.full_name = request.fullName
     if request.phone is not None:
@@ -292,10 +304,16 @@ async def upload_cin(
     stored_path.write_bytes(file_bytes)
 
     current_user.cin_file_path = str(stored_path)
+    analysis = await asyncio.to_thread(analyze_file, file_bytes, file.content_type, safe_name)
+    entry = {"id": uuid.uuid4().hex, "name": safe_name, "size": len(file_bytes),
+             "mimeType": file.content_type, "uploadedAt": datetime.now(UTC).isoformat(),
+             "path": str(stored_path), "documentType": "national_id", "analysis": analysis}
+    current_user.personal_documents = [d for d in (current_user.personal_documents or [])
+                                       if d.get("path") != str(previous)] + [entry]
     db.commit()
     db.refresh(current_user)
 
-    if previous and previous.exists():
+    if previous and previous.exists() and not db.query(Document).filter(Document.file_path == str(previous)).first():
         previous.unlink(missing_ok=True)
 
     return serialize_user(current_user)
@@ -320,6 +338,7 @@ async def upload_personal_document(
         "mimeType": (file.content_type or "").lower(),
         "uploadedAt": datetime.now(UTC).isoformat(),
         "path": str(stored_path),
+        "analysis": await asyncio.to_thread(analyze_file, file_bytes, file.content_type, safe_name),
     }
     # Reassign (not mutate) so SQLAlchemy detects the JSON column change.
     current_user.personal_documents = [*(current_user.personal_documents or []), entry]
@@ -362,7 +381,7 @@ async def delete_personal_document(
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    if target.get("path") and Path(target["path"]).exists():
+    if target.get("path") and Path(target["path"]).exists() and not db.query(Document).filter(Document.file_path == target["path"]).first():
         Path(target["path"]).unlink(missing_ok=True)
 
     current_user.personal_documents = [d for d in docs if d.get("id") != target.get("id")]

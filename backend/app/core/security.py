@@ -76,13 +76,7 @@ def get_current_user(
 ) -> User:
     """Resolves the current user from Bearer JWT or creates a local dev fallback."""
     if not authorization:
-        user = db.query(User).filter(User.email == "citizen@demo.local").first()
-        if user is None:
-            user = User(email="citizen@demo.local", is_admin=False)
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-        return user
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     parts = authorization.split(" ")
     if len(parts) != 2 or parts[0].lower() != "bearer":

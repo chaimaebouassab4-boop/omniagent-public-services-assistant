@@ -24,6 +24,10 @@ def client(tmp_path_factory):
     from main import app
 
     with TestClient(app) as test_client:
+        from app.core.config import settings
+        settings.google_api_key = ""
+        auth = test_client.post('/api/auth/signup', json={"email": "test-owner@example.test", "fullName": "Test Owner", "password": "secret123"}).json()
+        test_client.headers['Authorization'] = f"Bearer {auth['token']}"
         yield test_client
 
 

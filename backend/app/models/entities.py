@@ -15,6 +15,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, default="")
     full_name: Mapped[str] = mapped_column(String, default="")
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    profile_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     notify_email: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_sms: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -56,6 +57,7 @@ class Case(Base):
     applicant_email: Mapped[str] = mapped_column(String, default="")
     applicant_phone: Mapped[str | None] = mapped_column(String, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    workflow_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String, default="submitted")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -83,6 +85,8 @@ class Document(Base):
     mime_type: Mapped[str] = mapped_column(String)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_profile_document_id: Mapped[str | None] = mapped_column(String, nullable=True)
     validation_status: Mapped[str] = mapped_column(String, default="pending")
 
     case: Mapped[Case] = relationship(back_populates="documents")

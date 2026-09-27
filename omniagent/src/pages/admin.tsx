@@ -250,8 +250,14 @@ function VisitorStats() {
 
 export default function Admin() {
   const { language, isRtl } = useI18n();
-  const { data: stats } = useGetAdminStats();
-  const { data: cases } = useAdminListCases();
+  const statsQuery = useGetAdminStats();
+  const casesQuery = useAdminListCases();
+  const { data: stats } = statsQuery;
+  const { data: cases } = casesQuery;
+  const [queue, setQueue] = useState("all");
+  const [search, setSearch] = useState("");
+  const queueGroups: Record<string, string[]> = { pending: ["SUBMITTED", "RESUBMITTED"], review: ["UNDER_REVIEW"], changes: ["CHANGES_REQUESTED"], done: ["DOCS_APPROVED", "READY_FOR_PICKUP", "REJECTED"] };
+  const filteredCases = cases?.filter(c => (queue === "all" || queueGroups[queue]?.includes(c.status)) && `${c.trackingCode} ${c.applicantName} ${c.service?.nameFr} ${c.service?.nameAr}`.toLowerCase().includes(search.toLowerCase()));
   const updateCase = useUpdateCase();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -261,7 +267,7 @@ export default function Admin() {
   const [documentRequestText, setDocumentRequestText] = useState("");
 
   useEffect(() => {
-    if (copilotCaseId == null && cases?.length) setCopilotCaseId(cases[0].id);
+    if (copilotCaseId != null && cases && !cases.some(c => c.id === copilotCaseId)) setCopilotCaseId(null);
   }, [cases, copilotCaseId]);
 
   const refreshCase = (id: number) => {
@@ -272,6 +278,7 @@ export default function Admin() {
     queryClient.invalidateQueries({ queryKey: ["case-timeline", id] });
     queryClient.invalidateQueries({ queryKey: ["cases"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["admin", "cases", id, "ai-summary"] });
   };
 
   const handleAction = (id: number, status: CaseStatus) => {
@@ -329,8 +336,14 @@ export default function Admin() {
 
         {activeSection === "cases" && (
           <>
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">{[["all", "Tous", "الكل"], ["pending", "Dossiers à traiter", "طلبات جديدة"], ["review", "En cours", "قيد المراجعة"], ["changes", "Modifications demandées", "تعديلات مطلوبة"], ["done", "Traités", "معالجة"]].map(([key, fr, ar]) => <Button key={key} variant={queue === key ? "default" : "outline"} onClick={() => setQueue(key)}>{language === "fr" ? fr : ar} ({cases?.filter(c => key === "all" || queueGroups[key]?.includes(c.status)).length ?? 0})</Button>)}</div>
+              <Input aria-label="Rechercher un dossier" placeholder={language === "fr" ? "Rechercher par suivi, citoyen ou procédure…" : "بحث برقم التتبع أو المواطن أو الخدمة…"} value={search} onChange={e => setSearch(e.target.value)} />
+              {casesQuery.isLoading && <p>{language === "fr" ? "Chargement des dossiers…" : "جاري التحميل…"}</p>}
+              {(casesQuery.isError || statsQuery.isError) && <div role="alert" className="text-destructive">{language === "fr" ? "Impossible de charger les données administratives." : "تعذر تحميل البيانات."}<Button variant="outline" onClick={() => { void casesQuery.refetch(); void statsQuery.refetch(); }}>{language === "fr" ? "Réessayer" : "إعادة المحاولة"}</Button></div>}
+            </div>
             {copilotCaseId != null && (
-              <AdminCopilotCard caseId={copilotCaseId} />
+              <div className="space-y-3"><Link href={`/cases/${copilotCaseId}`} className="text-primary underline">{cases?.find(c => c.id === copilotCaseId)?.trackingCode} — {cases?.find(c => c.id === copilotCaseId)?.applicantName}</Link><AdminCopilotCard key={copilotCaseId} caseId={copilotCaseId} /></div>
             )}
 
             {/* Charts */}
@@ -379,16 +392,18 @@ export default function Admin() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {cases?.map((c) => (
+                      {filteredCases?.map((c) => (
                         <TableRow key={c.id}>
                           <TableCell className="font-mono text-xs font-semibold text-start text-primary">
                             {c.referenceNumber}
+                            <div className="mt-1 text-muted-foreground">{new Date(c.submittedAt).toLocaleDateString()}</div>
                           </TableCell>
                           <TableCell className="text-sm font-medium text-start">
                             {language === "fr" ? c.service?.nameFr : c.service?.nameAr}
                           </TableCell>
                           <TableCell className="text-sm text-start text-muted-foreground">
                             {c.applicantName}
+                            <div className="text-xs">{c.documentChecklist?.filter(d => d.status === "PRESENT").length ?? 0}/{c.documentChecklist?.length ?? 0} {language === "fr" ? "pièces déposées" : "وثائق مودعة"}</div>
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex justify-center">
@@ -453,7 +468,7 @@ export default function Admin() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {!cases?.length && (
+                      {!casesQuery.isLoading && !casesQuery.isError && !filteredCases?.length && (
                         <TableRow>
                           <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
                             {language === "fr" ? "Aucun dossier" : "لا توجد ملفات"}

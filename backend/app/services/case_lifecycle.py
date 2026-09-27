@@ -19,6 +19,9 @@ LEGACY_STATUSES = {
 }
 
 NEXT_ACTIONS = {
+    "CHANGES_REQUESTED": {"fr": "Corrigez vos pièces et soumettez à nouveau.", "ar": "صحح الوثائق وأعد إرسال الطلب."},
+    "RESUBMITTED": {"fr": "Vos corrections attendent la revue.", "ar": "التعديلات في انتظار المراجعة."},
+    "REJECTED": {"fr": "Consultez la décision dans l'historique.", "ar": "راجع القرار في السجل."},
     "DRAFT": {"fr": "Vérifiez votre demande et soumettez-la.", "ar": "راجع طلبك ثم أرسله."},
     "SUBMITTED": {"fr": "Aucune action requise. Votre dossier attend sa prise en charge.", "ar": "لا يلزمك أي إجراء. طلبك في انتظار المعالجة."},
     "UNDER_REVIEW": {"fr": "Suivez les demandes de documents complémentaires.", "ar": "تابع طلبات الوثائق الإضافية."},
@@ -42,6 +45,12 @@ def next_status(value: str) -> str | None:
 def validate_transition(current: str, target: str, *, is_admin: bool) -> str:
     """Return a canonical target or reject skipped, backward, and unauthorized steps."""
     target = canonical_status(target)
+    current = canonical_status(current)
+    if current == "CHANGES_REQUESTED" and target == "RESUBMITTED":
+        return target
+    if is_admin and ((current == "RESUBMITTED" and target == "UNDER_REVIEW") or
+                     (current == "UNDER_REVIEW" and target in {"CHANGES_REQUESTED", "REJECTED"})):
+        return target
     if current == "rejected" and target == "UNDER_REVIEW" and is_admin:
         return target  # A legacy rejected case can be reopened into the new workflow.
     expected = next_status(current)

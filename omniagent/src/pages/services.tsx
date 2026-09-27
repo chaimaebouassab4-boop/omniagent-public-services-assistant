@@ -4,6 +4,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useListServices, useCreateCase } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { createPortal } from "react-dom";
+import { useQuery } from "@tanstack/react-query";
+import { fetchMe } from "@/lib/auth";
 import {
   Clock, FileText, ArrowRight, ArrowLeft, X, Phone, Mail,
   CheckCircle, ChevronRight, Search, ExternalLink, Banknote,
@@ -77,6 +80,40 @@ const SERVICE_CATEGORY: Record<number, CategoryKey> = {
 /* ─── Helpers ─────────────────────────────────────────────────── */
 const getIcon = (id: number) => SERVICE_ICON_MAP[id] ?? SERVICE_ICON_MAP[1];
 
+const DOCUMENT_NAMES: Record<string, { fr: string; ar: string }> = {
+  both_ids: { fr: "Copies des CIN des deux époux", ar: "نسخ بطاقتي التعريف الوطنية للزوجين" },
+  birth_certificates: { fr: "Actes de naissance des deux époux", ar: "عقود الازدياد للزوجين" },
+  witness_documents: { fr: "Documents des témoins", ar: "وثائق الشهود" },
+  national_id: { fr: "Carte d'Identité Nationale (CIN)", ar: "بطاقة التعريف الوطنية" },
+  proof_of_residence: { fr: "Justificatif de domicile (Eau/Électricité)", ar: "إثبات السكن (فاتورة ماء/كهرباء)" },
+  address_confirmation: { fr: "Attestation d'habitation", ar: "شهادة السكنى / السكن" },
+  parent_id: { fr: "CIN du parent / tuteur légal", ar: "بطاقة التعريف للولي الشرعي" },
+  marriage_certificate: { fr: "Acte de mariage des parents", ar: "عقد زواج الوالدين" },
+  hospital_record: { fr: "Avis de naissance médical", ar: "إشعار الولادة الطبي" },
+  declarant_id: { fr: "CIN du déclarant", ar: "بطاقة التعريف للمصرح" },
+  medical_death_notice: { fr: "Constat de décès médical", ar: "شهادة الوفاة الطبية" },
+  family_book: { fr: "Livret de famille", ar: "الدفتر العائلي" },
+  residence_proof: { fr: "Justificatif de résidence", ar: "إثبات الإقامة" },
+  witness_declaration: { fr: "Déclaration des témoins", ar: "تصريح الشهود" },
+  birth_certificate: { fr: "Acte de naissance", ar: "عقد الازدياد" },
+  non_property_proof: { fr: "Attestation de non-propriété", ar: "شهادة عدم الملكية" },
+  tax_id: { fr: "Numéro d'identification fiscale", ar: "الرقم الضريبي" },
+  identity_photos: { fr: "Photos d'identité récentes", ar: "صور شمسية حديثة" },
+  diploma_copy: { fr: "Copie du diplôme", ar: "نسخة من الدبلوم" },
+  tribunal_receipt: { fr: "Récépissé du tribunal", ar: "وصل المحكمة" },
+  criminal_record_req: { fr: "Extrait de casier judiciaire", ar: "السجل العدلي" },
+};
+
+const getDocumentLabel = (reqKey: string, lang: string) => {
+  const normLang = lang === "fr" ? "fr" : "ar";
+  if (DOCUMENT_NAMES[reqKey]) {
+    return DOCUMENT_NAMES[reqKey][normLang];
+  }
+  return reqKey
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
 /* ─── Component ───────────────────────────────────────────────── */
 export default function Services() {
   const { language, isRtl } = useI18n();
@@ -89,6 +126,8 @@ export default function Services() {
   const [_, setLocation] = useLocation();
 
   const createCase = useCreateCase();
+  const profile = useQuery({ queryKey: ["profile"], queryFn: fetchMe, staleTime: 0 });
+  const [documentSelections, setDocumentSelections] = useState<Record<string, string>>({});
   const { toast } = useToast();
   const cinInputRef = useRef<HTMLInputElement>(null);
   const [isScanningCin, setIsScanningCin] = useState(false);
@@ -99,6 +138,13 @@ export default function Services() {
   });
 
   // Check for pre-filled data passed from chat.tsx (Feature 2 Task 2.2)
+  useEffect(() => {
+    if (!profile.data || !selectedService) return;
+    form.reset({ applicantName: profile.data.fullName, applicantEmail: profile.data.email,
+      applicantPhone: profile.data.phone ?? "", notes: "" });
+    setDocumentSelections({});
+  }, [selectedService?.id, profile.data?.id]);
+
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem("omniagent_prefill");
@@ -178,7 +224,8 @@ export default function Services() {
   const onSubmit = (values: z.infer<typeof formSchema>, submit = true) => {
     if (!selectedService) return;
     createCase.mutate(
-      { data: { ...values, serviceId: selectedService.id, submit } },
+      { data: { ...values, serviceId: selectedService.id, submit,
+        documentReferences: Object.entries(documentSelections).filter(([, id]) => !!id).map(([requirement, documentId]) => ({ requirement, documentId })) } },
       {
         onSuccess: (newCase) => { setSelectedService(null); setLocation(`/cases/${newCase.id}`); },
         onError: (error) => toast({ variant: "destructive", title: language === "fr" ? "Demande impossible" : "تعذر إنشاء الطلب", description: error.message }),
@@ -384,7 +431,7 @@ export default function Services() {
       </div>
 
       {/* ── DETAIL DRAWER ─────────────────────────────────────── */}
-      <AnimatePresence>
+      {createPortal(<AnimatePresence>
         {detailService && (() => {
           const m = meta(detailService.id);
           const iconInfo = getIcon(detailService.id);
@@ -543,118 +590,177 @@ export default function Services() {
             </motion.div>
           );
         })()}
-      </AnimatePresence>
+      </AnimatePresence>, document.body)}
 
       {/* ── REQUEST DIALOG ────────────────────────────────────── */}
       <Dialog open={selectedService !== null} onOpenChange={(open) => !open && setSelectedService(null)}>
-        <DialogContent className="sm:max-w-[440px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2.5">
+        <DialogContent className="sm:max-w-[480px] max-h-[85vh] flex flex-col p-0 overflow-hidden" dir={isRtl ? "rtl" : "ltr"}>
+          <DialogHeader className="p-5 pb-3 border-b border-border shrink-0">
+            <DialogTitle className="flex items-center gap-2.5 text-base">
               {selectedService && (() => {
                 const iconInfo = getIcon(selectedService.id);
                 const Icon = iconInfo.icon;
                 return (
-                  <div className={`w-7 h-7 rounded-md ${iconInfo.bg} flex items-center justify-center`}>
+                  <div className={`w-7 h-7 rounded-md ${iconInfo.bg} flex items-center justify-center shrink-0`}>
                     <Icon className={`w-4 h-4 ${iconInfo.color}`} />
                   </div>
                 );
               })()}
-              {language === "fr" ? "Démarrer la démarche" : "بدء الإجراء"}
+              <span>{language === "fr" ? "Démarrer la démarche" : "بدء الإجراء"}</span>
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs text-muted-foreground mt-0.5">
               {selectedService && (
                 <span className="font-medium text-foreground">{getName(selectedService)}</span>
               )}
               {" — "}{language === "fr" ? "Remplissez vos informations" : "أدخل معلوماتك"}
             </DialogDescription>
           </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit((values) => onSubmit(values, true))} className="space-y-4">
-              {/* Feature 2: Smart OCR Auto-fill Button */}
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                    <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-foreground">
-                      {language === "fr" ? "Auto-remplir avec ma CIN" : "ملء تلقائي عبر البطاقة الوطنية"}
-                    </div>
-                    <p className="text-[11px] text-muted-foreground truncate">
-                      {language === "fr" ? "Scannez votre CIN pour remplir en 1 clic" : "فحص ذكي للبطاقة لملء البيانات فوراً"}
-                    </p>
-                  </div>
-                </div>
-                <input
-                  ref={cinInputRef}
-                  type="file"
-                  accept="application/pdf,image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={handleCinScan}
-                  data-testid="input-scan-cin"
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={isScanningCin}
-                  onClick={() => cinInputRef.current?.click()}
-                  className="shrink-0 text-xs gap-1.5 h-8 border-primary/30 hover:bg-primary/10 text-primary font-medium"
-                >
-                  {isScanningCin ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Upload className="w-3.5 h-3.5" />
-                  )}
-                  {isScanningCin
-                    ? (language === "fr" ? "Scan en cours…" : "جاري الفحص…")
-                    : (language === "fr" ? "Scanner" : "فحص")}
-                </Button>
-              </div>
 
-              {[
-                { name: "applicantName" as const, label: { fr: "Nom complet", ar: "الاسم الكامل" }, placeholder: "Ahmed Benali" },
-                { name: "applicantEmail" as const, label: { fr: "Email", ar: "البريد الإلكتروني" }, type: "email", placeholder: "ahmed@example.ma" },
-                { name: "applicantPhone" as const, label: { fr: "Téléphone", ar: "رقم الهاتف" }, placeholder: "+212 6..." },
-              ].map(({ name, label, placeholder, type }) => (
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit((values) => onSubmit(values, true))} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-5 space-y-4 overflow-y-auto flex-1">
+                {/* Feature 2: Smart OCR Auto-fill Button */}
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                      <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-foreground">
+                        {language === "fr" ? "Auto-remplir avec ma CIN" : "ملء تلقائي عبر البطاقة الوطنية"}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {language === "fr" ? "Scannez votre CIN pour remplir en 1 clic" : "فحص ذكي للبطاقة لملء البيانات فوراً"}
+                      </p>
+                    </div>
+                  </div>
+                  <input
+                    ref={cinInputRef}
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleCinScan}
+                    data-testid="input-scan-cin"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isScanningCin}
+                    onClick={() => cinInputRef.current?.click()}
+                    className="shrink-0 text-xs gap-1.5 h-8 border-primary/30 hover:bg-primary/10 text-primary font-medium"
+                  >
+                    {isScanningCin ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="w-3.5 h-3.5" />
+                    )}
+                    {isScanningCin
+                      ? (language === "fr" ? "Scan en cours…" : "جاري الفحص…")
+                      : (language === "fr" ? "Scanner" : "فحص")}
+                  </Button>
+                </div>
+
+                {[
+                  { name: "applicantName" as const, label: { fr: "Nom complet", ar: "الاسم الكامل" }, placeholder: "Ahmed Benali" },
+                  { name: "applicantEmail" as const, label: { fr: "Email", ar: "البريد الإلكتروني" }, type: "email", placeholder: "ahmed@example.ma" },
+                  { name: "applicantPhone" as const, label: { fr: "Téléphone", ar: "رقم الهاتف" }, placeholder: "+212 6..." },
+                ].map(({ name, label, placeholder, type }) => (
+                  <FormField
+                    key={name}
+                    control={form.control}
+                    name={name}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-medium">{language === "fr" ? label.fr : label.ar}</FormLabel>
+                        <FormControl>
+                          <Input className="h-9 text-xs" type={type ?? "text"} placeholder={placeholder} {...field} />
+                        </FormControl>
+                        <FormMessage className="text-xs" />
+                      </FormItem>
+                    )}
+                  />
+                ))}
+
+                {/* Required Documents Selector Section */}
+                {selectedService?.requiredDocuments && selectedService.requiredDocuments.length > 0 && (
+                  <div className="space-y-3 pt-3 border-t border-border/70">
+                    <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-primary" />
+                      <span>{language === "fr" ? "Documents requis à associer" : "الوثائق المطلوبة للإرفاق"}</span>
+                    </div>
+                    {profile.isError && (
+                      <p className="text-xs text-destructive">
+                        {language === "fr" ? "Profil indisponible. Réessayez." : "الملف الشخصي غير متاح."}
+                      </p>
+                    )}
+                    {selectedService.requiredDocuments.map((requirement) => (
+                      <div key={requirement} className="space-y-1">
+                        <label className="text-xs font-medium text-muted-foreground block">
+                          {getDocumentLabel(requirement, language)}
+                        </label>
+                        <select
+                          className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors"
+                          value={documentSelections[requirement] ?? ""}
+                          onChange={(e) =>
+                            setDocumentSelections((previous) => ({
+                              ...previous,
+                              [requirement]: e.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">
+                            {language === "fr"
+                              ? "Déposer plus tard / choisir du profil"
+                              : "الإيداع لاحقاً / اختيار من الملف الشخصي"}
+                          </option>
+                          {profile.data?.reusableDocuments?.map((doc) => (
+                            <option key={doc.id} value={doc.id}>
+                              {doc.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <FormField
-                  key={name}
                   control={form.control}
-                  name={name}
+                  name="notes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{language === "fr" ? label.fr : label.ar}</FormLabel>
-                      <FormControl>
-                        <Input type={type ?? "text"} placeholder={placeholder} {...field} />
-                      </FormControl>
-                      <FormMessage />
+                      <FormLabel className="text-xs font-medium">{language === "fr" ? "Notes (optionnel)" : "ملاحظات (اختياري)"}</FormLabel>
+                      <FormControl><Textarea className="text-xs min-h-[70px]" placeholder="..." {...field} /></FormControl>
+                      <FormMessage className="text-xs" />
                     </FormItem>
                   )}
                 />
-              ))}
-              <FormField
-                control={form.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{language === "fr" ? "Notes (optionnel)" : "ملاحظات (اختياري)"}</FormLabel>
-                    <FormControl><Textarea placeholder="..." {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <DialogFooter className="pt-2">
-                <Button type="button" variant="outline" onClick={() => setSelectedService(null)}>
+              </div>
+
+              <DialogFooter className="p-4 border-t border-border bg-muted/20 flex flex-row items-center justify-end gap-2 shrink-0">
+                <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedService(null)}>
                   {language === "fr" ? "Annuler" : "إلغاء"}
                 </Button>
-                <Button type="button" variant="secondary" disabled={createCase.isPending}
-                  onClick={form.handleSubmit((values) => onSubmit(values, false))}>
-                  {language === "fr" ? "Enregistrer brouillon" : "حفظ كمسودة"}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 text-xs"
+                  disabled={createCase.isPending}
+                  onClick={form.handleSubmit((values) => onSubmit(values, false))}
+                >
+                  {language === "fr" ? "Brouillon" : "مسودة"}
                 </Button>
-                <Button type="submit" disabled={createCase.isPending} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+                  disabled={createCase.isPending}
+                >
                   {createCase.isPending
                     ? (language === "fr" ? "Envoi…" : "جاري الإرسال…")
-                    : (language === "fr" ? "Envoyer" : "إرسال")}
+                    : (language === "fr" ? "Envoyer la demande" : "إرسال الطلب")}
                 </Button>
               </DialogFooter>
             </form>

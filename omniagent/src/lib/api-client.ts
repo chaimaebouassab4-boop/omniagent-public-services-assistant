@@ -50,6 +50,8 @@ export interface Service {
 }
 
 export interface Case {
+  profileSnapshot?: { fullName: string; email: string; phone?: string; address?: string; snapshotCreatedAt: string };
+  documentChecklist?: CopilotSummary["documentsCheck"]["items"];
   id: number;
   referenceNumber: string;
   status: string;
@@ -66,6 +68,8 @@ export interface Case {
 }
 
 export interface TimelineEvent {
+  decisionReason?: string;
+  internalNote?: string;
   id: number;
   event?: string;
   descriptionFr: string;
@@ -83,6 +87,8 @@ export interface Message {
 }
 
 export interface Document {
+  documentType?: string;
+  analysis?: { extractionStatus?: string; confidence_score?: number; warnings?: string[]; raw_extracted_text?: string; [key: string]: unknown };
   id: number;
   name: string;
   fileSize: number;
@@ -144,11 +150,6 @@ export interface AdminActionResult {
   notificationPreview: { channel: string; fr: string; darija: string };
 }
 
-export interface DemoPersonaResult {
-  persona: { key: string; label: string; language: "ar" | "fr" | "darija" };
-  case: Case;
-  aiSummary: CopilotSummary;
-}
 
 // ─── Query key factories ──────────────────────────────────────────────────────
 export const getListMessagesQueryKey = (caseId: number) => ["messages", caseId];
@@ -167,7 +168,7 @@ export function useListServices() {
 
 // ─── Cases ────────────────────────────────────────────────────────────────────
 export function useCreateCase() {
-  return useMutation<Case, Error, { data: { serviceId: number; applicantName: string; applicantEmail: string; applicantPhone?: string; notes?: string; submit?: boolean } }>({
+  return useMutation<Case, Error, { data: { serviceId: number; applicantName: string; applicantEmail: string; applicantPhone?: string; notes?: string; submit?: boolean; documentReferences?: { documentId: string; requirement: string }[] } }>({
     mutationFn: ({ data }) =>
       apiFetch("/api/cases", { method: "POST", body: JSON.stringify(data) }),
   });
@@ -177,14 +178,15 @@ export function useListCases() {
   return useQuery<Case[]>({
     queryKey: ["cases"],
     queryFn: () => apiFetch("/api/cases"),
+    refetchInterval: 10000,
   });
 }
 
-export function useSubmitCase() {
+export function useSubmitCase(status = "SUBMITTED") {
   return useMutation<Case, Error, number>({
     mutationFn: (caseId) => apiFetch(`/api/cases/${caseId}`, {
       method: "PATCH",
-      body: JSON.stringify({ status: "SUBMITTED" }),
+      body: JSON.stringify({ status }),
     }),
   });
 }
@@ -213,6 +215,7 @@ export function useGetCase(caseId: number, options?: any) {
   return useQuery<Case>({
     queryKey: ["case", caseId],
     queryFn: () => apiFetch(`/api/cases/${caseId}`),
+    refetchInterval: 10000,
     enabled: !!caseId,
     ...options?.query,
   });
@@ -270,6 +273,7 @@ export function useGetAdminStats() {
   return useQuery<AdminStats>({
     queryKey: getGetAdminStatsQueryKey(),
     queryFn: () => apiFetch("/api/admin/stats"),
+    refetchInterval: 10000,
   });
 }
 
@@ -277,6 +281,7 @@ export function useAdminListCases() {
   return useQuery<Case[]>({
     queryKey: getAdminListCasesQueryKey(),
     queryFn: () => apiFetch("/api/admin/cases"),
+    refetchInterval: 10000,
   });
 }
 
@@ -294,6 +299,7 @@ export function useAdminCaseAiSummary(caseId: number, options?: any) {
   return useQuery<CopilotSummary>({
     queryKey: getAdminCaseAiSummaryQueryKey(caseId),
     queryFn: () => apiFetch(`/api/admin/cases/${caseId}/ai-summary`),
+    refetchInterval: 10000,
     enabled: !!caseId,
     ...options?.query,
   });
@@ -305,7 +311,7 @@ export function useAdminCaseAction() {
     Error,
     {
       id: number;
-      action: "approve" | "request-changes";
+      action: "approve" | "request-changes" | "start-review" | "reject" | "note";
       data?: { reason?: string; messageFr?: string; messageDarija?: string };
     }
   >({
@@ -314,12 +320,5 @@ export function useAdminCaseAction() {
         method: "POST",
         body: JSON.stringify(data ?? {}),
       }),
-  });
-}
-
-export function activateDemoPersona(persona: "amine" | "fatima" | "youssef") {
-  return apiFetch<DemoPersonaResult>(`/api/admin/demo-personas/${persona}`, {
-    method: "POST",
-    body: "{}",
   });
 }

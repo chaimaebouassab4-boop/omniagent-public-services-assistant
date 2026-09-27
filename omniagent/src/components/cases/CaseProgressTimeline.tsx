@@ -6,7 +6,7 @@ import { Check, Circle } from "lucide-react";
 export function CaseProgressTimeline({ caseData, compact = false }: { caseData: Case; compact?: boolean }) {
   const { language, isRtl } = useI18n();
   const current = canonicalCaseStatus(caseData.status);
-  const activeIndex = current ? CASE_STEPS.indexOf(current) : -1;
+  const activeIndex = CASE_STEPS.findIndex(step => step === current);
   const locale = language === "fr" ? "fr-MA" : "ar-MA";
   const action = current
     ? (language === "fr" ? caseData.nextAction ?? NEXT_ACTIONS[current].fr : caseData.nextActionAr ?? NEXT_ACTIONS[current].ar)
@@ -14,6 +14,7 @@ export function CaseProgressTimeline({ caseData, compact = false }: { caseData: 
 
   return (
     <div className={compact ? "space-y-3" : "space-y-5"} dir={isRtl ? "rtl" : "ltr"}>
+      {current && activeIndex < 0 && <p className="rounded-lg border p-3 font-semibold">{CASE_LABELS[current][language === "fr" ? "fr" : "ar"]}</p>}
       <ol className={compact ? "grid gap-2 sm:grid-cols-5" : "space-y-2"} aria-label={language === "fr" ? "Étapes du dossier" : "مراحل الطلب"}>
         {CASE_STEPS.map((step, index) => {
           const reached = index <= activeIndex;

@@ -20,6 +20,9 @@ export interface PersonalDocument {
 }
 
 export interface AuthUser {
+  address?: string;
+  preferredLanguage?: string;
+  reusableDocuments?: (PersonalDocument & { documentType?: string })[];
   id: string;
   email: string;
   fullName: string;
@@ -151,6 +154,8 @@ export async function fetchMe(): Promise<AuthUser> {
 }
 
 export async function updateMe(payload: {
+  address?: string;
+  preferredLanguage?: string;
   fullName?: string;
   phone?: string;
   notifyEmail?: boolean;

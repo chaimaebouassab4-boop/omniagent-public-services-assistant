@@ -86,6 +86,24 @@ def test_receipt_pdf_and_case_ownership(client):
         assert client.get(path, headers=headers).status_code == 403
 
 
+def test_citizen_document_checklist_tracks_typed_upload(client):
+    case = _create(client)
+    before = client.get(f"/api/cases/{case['id']}").json()["documentChecklist"]
+    requirement = before[0]["requirement"]
+    assert before[0]["status"] == "MISSING"
+    uploaded = client.post(
+        f"/api/cases/{case['id']}/documents",
+        files={"file": ("scan.pdf", b"%PDF-1.4 mock", "application/pdf")},
+        data={"docType": requirement},
+    )
+    assert uploaded.status_code == 201
+    after = client.get(f"/api/cases/{case['id']}").json()["documentChecklist"]
+    item = next(item for item in after if item["requirement"] == requirement)
+    assert item["status"] == "PRESENT"
+    assert item["validationStatus"] == "pending"
+    assert item["labelFr"] and item["labelAr"]
+
+
 def test_mock_profiles_are_repeatable_and_synthetic():
     profiles = generate_mock_citizens(20, seed=42)
     assert profiles == generate_mock_citizens(20, seed=42)

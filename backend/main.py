@@ -7,6 +7,7 @@ from app.api import auth, chat, health, omni  # noqa: F401
 from app.core.config import settings
 from app.core.seed_services import seed_admin, seed_services
 from app.db.database import Base, SessionLocal, engine
+from app.db.migrations import migrate
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 
@@ -29,6 +30,7 @@ app.include_router(health.router)
 async def startup_event() -> None:
     """Create DB tables and seed service definitions."""
     Base.metadata.create_all(bind=engine)
+    migrate(engine)
     db = SessionLocal()
     try:
         seed_services(db)
@@ -52,4 +54,3 @@ async def diag() -> dict:
         "gemini_model": os.getenv("GEMINI_MODEL"),
         "google_key_len": len(os.getenv("GOOGLE_API_KEY", "")),
     }
-

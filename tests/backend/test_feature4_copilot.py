@@ -2,9 +2,16 @@
 
 
 def _activate(client, admin_headers, persona: str):
-    response = client.post(f"/api/admin/demo-personas/{persona}", headers=admin_headers)
-    assert response.status_code == 200, response.text
-    return response.json()
+    from app.db.database import SessionLocal
+    from app.models import User
+    from persona_fixtures import prepare_demo_persona
+    from app.api.omni import serialize_case
+    from app.agents import evaluate_case
+    with SessionLocal() as db:
+        actor = db.query(User).filter(User.is_admin == True).first()
+        case, profile = prepare_demo_persona(db, persona, actor.id)
+        return {"case": serialize_case(case), "persona": profile, "aiSummary": evaluate_case(case)}
+
 
 
 def test_amines_case_is_grounded_and_approvable(client, admin_headers):
@@ -58,7 +65,7 @@ def test_unreadable_document_prefills_bilingual_change_request(client, admin_hea
         },
     )
     assert requested.status_code == 200, requested.text
-    assert requested.json()["case"]["status"] == "UNDER_REVIEW"
+    assert requested.json()["case"]["status"] == "CHANGES_REQUESTED"
     assert requested.json()["notificationPreview"]["fr"].startswith("Merci")
     assert requested.json()["notificationPreview"]["darija"].startswith("عافاك")
 

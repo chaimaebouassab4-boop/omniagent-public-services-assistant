@@ -3,10 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import {
   useGetCase,
   useGetCaseTimeline,
-  useListMessages,
-  useSendMessage,
   useListDocuments,
-  getListMessagesQueryKey,
   getListDocumentsQueryKey,
   useSubmitCase,
   downloadCaseReceipt,
@@ -15,16 +12,13 @@ import { useParams } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "./dashboard";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, Mic, Send, Bot, User, CheckCircle2, Clock, FileText, Loader2, Eye, Download, Trash2, AlertTriangle } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { Upload, CheckCircle2, Clock, FileText, Loader2, Eye, Download, Trash2, AlertTriangle } from "lucide-react";
+import { useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { uploadDocument, validateFile, fetchCaseDocPreview, deleteCaseDocument } from "@/lib/documents";
-import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import { CaseProgressTimeline } from "@/components/cases/CaseProgressTimeline";
 import { canonicalCaseStatus } from "@/lib/case-lifecycle";
 import { getStoredUser } from "@/lib/auth";
@@ -50,21 +44,18 @@ export default function CaseDetail() {
   const isAdmin = !!getStoredUser()?.isAdmin;
   const { data: caseData, isLoading: caseLoading } = useGetCase(caseId, { query: { enabled: !!caseId, queryKey: ['case', caseId] as any } });
   const { data: timeline } = useGetCaseTimeline(caseId, { query: { enabled: !!caseId, queryKey: ['case-timeline', caseId] as any } });
-  const { data: messages } = useListMessages(caseId, { query: { enabled: !!caseId && !isAdmin, queryKey: getListMessagesQueryKey(caseId) as any } });
   const { data: documents } = useListDocuments(caseId, { query: { enabled: !!caseId, queryKey: getListDocumentsQueryKey(caseId) as any } });
-  const sendMessage = useSendMessage();
-  const submitCase = useSubmitCase();
+  const submitCase = useSubmitCase(caseData?.status === "CHANGES_REQUESTED" ? "RESUBMITTED" : "SUBMITTED");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [messageInput, setMessageInput] = useState("");
+  const [uploadType, setUploadType] = useState("other");
   const [isUploading, setIsUploading] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<{ name: string; url: string; mimeType: string } | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<number | string | null>(null);
   const [docToDelete, setDocToDelete] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDownloadingReceipt, setIsDownloadingReceipt] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleReceipt = async () => {
@@ -176,7 +167,8 @@ export default function CaseDetail() {
 
     setIsUploading(true);
     try {
-      await uploadDocument(caseId, file);
+      await uploadDocument(caseId, file, uploadType);
+      queryClient.invalidateQueries({ queryKey: ['case', caseId] });
       toast({
         title: language === "fr" ? "Document envoyé" : "تم إرسال الوثيقة",
         description: file.name,
@@ -194,38 +186,20 @@ export default function CaseDetail() {
     }
   };
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, sendMessage.isPending]);
-
-  const handleSendMessage = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!messageInput.trim() || !caseId) return;
-
-    sendMessage.mutate(
-      { id: caseId, data: { content: messageInput, language: language as "ar"|"fr"|"darija" } },
-      {
-        onSuccess: () => {
-          setMessageInput("");
-          queryClient.invalidateQueries({ queryKey: getListMessagesQueryKey(caseId) });
-        }
-      }
-    );
-  };
-
-  const prompts = language === "fr" 
-    ? ["Comment renouveler ma carte ?", "Quels sont les documents manquants ?"] 
-    : ["كيفاش نجدد بطاقة التعريف؟", "شنو هي الوثائق اللي خصني نجيب؟"];
-
   return (
     <AppLayout>
-      <div className={`max-w-6xl mx-auto grid grid-cols-1 gap-6 ${isAdmin ? "" : "lg:grid-cols-3"}`}>
+      <div className="max-w-6xl mx-auto space-y-6 min-w-0">
         
-        {/* Left Column: Case Info & Chat */}
-        <div className={`space-y-6 flex flex-col ${isAdmin ? "" : "lg:col-span-2 h-[calc(100vh-120px)]"}`}>
+        {/* Case information */}
+        <div className="space-y-6 min-w-0">
           {/* Header */}
+          {isAdmin && caseData && <Card><CardHeader><CardTitle>{language === "fr" ? "Informations du citoyen à la soumission" : "معلومات المواطن عند الإرسال"}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm">
+            <p>{caseData.profileSnapshot?.fullName ?? caseData.applicantName}</p>
+            <p>{caseData.profileSnapshot?.email ?? caseData.applicantEmail}</p>
+            <p>{caseData.profileSnapshot?.phone ?? caseData.applicantPhone}</p>
+            <p>{caseData.profileSnapshot?.address}</p>
+            <p className="whitespace-pre-wrap">{caseData.notes}</p>
+          </CardContent></Card>}
           <Card className="shrink-0">
             <CardContent className="p-6">
               {caseLoading ? (
@@ -240,7 +214,7 @@ export default function CaseDetail() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={caseData?.status || ""} />
-                    {caseData && canonicalCaseStatus(caseData.status) === "DRAFT" ? (
+                    {caseData && ["DRAFT", "CHANGES_REQUESTED"].includes(caseData.status) ? (
                       <Button size="sm" onClick={handleSubmitDraft} disabled={submitCase.isPending}>
                         {submitCase.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : (language === "fr" ? "Soumettre" : "إرسال الطلب")}
                       </Button>
@@ -256,91 +230,11 @@ export default function CaseDetail() {
             </CardContent>
           </Card>
 
-          {/* Citizen assistant: intentionally hidden for civil-servant accounts. */}
-          {!isAdmin && <Card className="flex-1 flex flex-col min-h-0 overflow-hidden border-primary/20 shadow-md">
-            <CardHeader className="py-3 px-4 border-b bg-muted/30 shrink-0">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Bot className="w-5 h-5 text-primary" />
-                {t("nav.chat")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
-              <ScrollArea className="flex-1 p-4" viewportRef={scrollRef}>
-                <div className="space-y-4">
-                  {messages?.map((msg) => (
-                    <div key={msg.id} className={`flex gap-3 max-w-[80%] ${msg.role === 'user' ? (isRtl ? 'mr-auto flex-row-reverse' : 'ml-auto flex-row-reverse') : (isRtl ? 'ml-auto' : 'mr-auto')}`}>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-secondary text-white' : 'bg-primary text-white'}`}>
-                        {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-                      </div>
-                      <div className={`p-3 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-secondary text-white rounded-tr-none' : 'bg-muted rounded-tl-none'}`}>
-                        <ChatMessageContent
-                          content={msg.content}
-                          role={msg.role as "user" | "assistant"}
-                          isRtl={isRtl}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  {sendMessage.isPending && (
-                    <div className={`flex gap-3 max-w-[80%] ${isRtl ? 'ml-auto' : 'mr-auto'}`}>
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-primary text-white">
-                        <Bot className="w-4 h-4" />
-                      </div>
-                      <div className="p-3 rounded-2xl text-sm bg-muted rounded-tl-none flex items-center gap-1">
-                        <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce"></span>
-                        <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
-                        <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </ScrollArea>
-              
-              {/* Chat Input */}
-              <div className="p-4 border-t bg-background shrink-0">
-                <div className="flex gap-2 mb-3 overflow-x-auto pb-2 scrollbar-hide">
-                  {prompts.map((p, i) => (
-                    <button 
-                      key={i} 
-                      onClick={() => setMessageInput(p)}
-                      className="whitespace-nowrap px-3 py-1.5 bg-muted hover:bg-muted/80 text-xs rounded-full border transition-colors"
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-                <form onSubmit={handleSendMessage} className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="shrink-0 text-muted-foreground"
-                    disabled={isUploading}
-                    onClick={() => fileInputRef.current?.click()}
-                    title={language === "fr" ? "Joindre un document" : "إرفاق وثيقة"}
-                  >
-                    {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  </Button>
-                  <Button type="button" variant="outline" size="icon" className="shrink-0 text-muted-foreground">
-                    <Mic className="w-4 h-4" />
-                  </Button>
-                  <Input 
-                    value={messageInput} 
-                    onChange={e => setMessageInput(e.target.value)} 
-                    placeholder={t("chat.placeholder")}
-                    className="flex-1"
-                  />
-                  <Button type="submit" size="icon" disabled={!messageInput.trim() || sendMessage.isPending} className="shrink-0">
-                    <Send className={`w-4 h-4 ${isRtl ? 'rotate-180' : ''}`} />
-                  </Button>
-                </form>
-              </div>
-            </CardContent>
-          </Card>}
+
         </div>
 
         {/* Right Column: Timeline & Checklist */}
-        <div className={isAdmin ? "grid items-start gap-6 lg:grid-cols-2" : "space-y-6"}>
+        <div className="grid items-start gap-6 lg:grid-cols-2 min-w-0">
           {isAdmin && caseId > 0 && <AdminCopilotCard caseId={caseId} />}
           {caseData && <Card>
             <CardHeader><CardTitle className="text-base">{language === "fr" ? "Suivi du dossier" : "تتبع الطلب"}</CardTitle></CardHeader>
@@ -356,19 +250,27 @@ export default function CaseDetail() {
             data-testid="input-document-file"
           />
 
-          <Card>
+          <Card className="min-w-0">
             <CardHeader>
-              <CardTitle className="text-base">{language === "fr" ? "Documents Requis" : "الوثائق المطلوبة"}</CardTitle>
+              <CardTitle className="text-base">{language === "fr" ? "Documents manquants ou à remplacer" : "الوثائق الناقصة أو المطلوب تعويضها"}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {caseData?.service?.requiredDocuments?.map((doc, idx) => (
-                  <div key={idx} className="flex items-start gap-3 p-3 rounded-lg border bg-card">
-                    <CheckCircle2 className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
-                    <div className="text-sm font-medium">{doc}</div>
+            <CardContent className="space-y-3">
+              {caseLoading ? <Skeleton className="h-24" /> : !caseData?.documentChecklist ? (
+                <p className="text-sm text-muted-foreground">{language === "fr" ? "Liste des pièces indisponible." : "قائمة الوثائق غير متاحة."}</p>
+              ) : caseData.documentChecklist.filter(item => item.status !== "PRESENT").length === 0 ? (
+                <p className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 className="h-5 w-5 shrink-0" />{language === "fr" ? "Toutes les pièces demandées sont déposées. Leur validation reste à la charge de l’administration." : "تم إيداع جميع الوثائق المطلوبة. المصادقة عليها تبقى من اختصاص الإدارة."}</p>
+              ) : caseData.documentChecklist.filter(item => item.status !== "PRESENT").map(item => (
+                <div key={item.requirement} className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 dark:bg-amber-950/20">
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+                  <div className="flex-1 min-w-0 text-sm">
+                    <p className="font-medium break-words">{language === "fr" ? item.labelFr : item.labelAr}</p>
+                    <p className="text-muted-foreground">{item.status === "UNREADABLE" ? (language === "fr" ? "À remplacer : pièce illisible ou rejetée" : "يجب تعويض الوثيقة غير المقروءة أو المرفوضة") : (language === "fr" ? "Non déposée" : "لم يتم إيداعها")}</p>
                   </div>
-                ))}
-              </div>
+                  <Button size="sm" variant="outline" disabled={isUploading} onClick={() => { setUploadType(item.requirement); fileInputRef.current?.click(); }}>
+                    <Upload className="h-4 w-4 me-2" />{language === "fr" ? "Déposer" : "إيداع"}
+                  </Button>
+                </div>
+              ))}
             </CardContent>
           </Card>
 
@@ -376,14 +278,14 @@ export default function CaseDetail() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-base">
-                {language === "fr" ? "Mes Documents" : "وثائقي"}
+                {language === "fr" ? "Documents déjà déposés" : "الوثائق المودعة"}
               </CardTitle>
               <Button
                 size="sm"
                 variant="outline"
                 className="gap-1.5"
                 disabled={isUploading}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => { setUploadType("other"); fileInputRef.current?.click(); }}
                 data-testid="button-upload-document"
               >
                 {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -393,12 +295,18 @@ export default function CaseDetail() {
             <CardContent>
               <div className="space-y-2">
                 {documents?.map((doc) => (
-                  <div key={doc.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
+                  <div key={doc.id} className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <FileText className="w-5 h-5 text-primary shrink-0" />
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium truncate" title={doc.name}>{doc.name}</div>
-                        <div className="text-xs text-muted-foreground">{formatFileSize(doc.fileSize)}</div>
+                        <div className="text-xs text-muted-foreground">{formatFileSize(doc.fileSize)} · {new Date(doc.uploadedAt).toLocaleDateString(language === "fr" ? "fr-MA" : "ar-MA")}</div>
+                        {isAdmin && <details className="mt-2 text-xs"><summary className="cursor-pointer">{language === "fr" ? "Extraction OCR / pré-contrôle" : "استخراج OCR / فحص أولي"}</summary>
+                          <p>{doc.analysis?.extractionStatus ?? (language === "fr" ? "Non analysé" : "لم يتم التحليل")}</p>
+                          {doc.analysis?.confidence_score != null && <p>{Math.round(doc.analysis.confidence_score * 100)}%</p>}
+                          {doc.analysis?.warnings?.map((warning, index) => <p key={index}>{warning}</p>)}
+                          <pre className="whitespace-pre-wrap break-words max-h-52 overflow-auto">{doc.analysis?.raw_extracted_text}</pre>
+                        </details>}
                       </div>
                     </div>
 
@@ -474,11 +382,12 @@ export default function CaseDetail() {
               <CardTitle className="text-base">{language === "fr" ? "Historique" : "السجل"}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="relative border-l-2 border-muted ml-3 pl-4 space-y-6">
+              <div className="relative border-s-2 border-muted ms-3 ps-4 space-y-6">
                 {timeline?.map((ev, idx) => (
                   <div key={ev.id} className="relative">
-                    <div className="absolute -left-[23px] top-1 w-3 h-3 rounded-full bg-primary ring-4 ring-background" />
+                    <div className="absolute -start-[23px] top-1 w-3 h-3 rounded-full bg-primary ring-4 ring-background" />
                     <div className="text-sm font-semibold">{language === "fr" ? ev.descriptionFr : ev.descriptionAr}</div>
+                    {(ev.decisionReason || ev.internalNote) && <p className="text-sm whitespace-pre-wrap">{ev.decisionReason || ev.internalNote}</p>}
                     <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {new Date(ev.occurredAt).toLocaleDateString()}
