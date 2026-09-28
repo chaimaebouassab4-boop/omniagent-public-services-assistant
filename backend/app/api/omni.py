@@ -721,10 +721,10 @@ def detect_service_id(message: str) -> str | None:
         "criminal_record": [
             "السجل العدلي", "سجل عدلي", "الكازي", "casier judiciaire", "casier", "criminal",
         ],
-        # ----- identity / misc (no dedicated KB folder yet) -----
-        "residence_certificate": [
+        # ----- identity -----
+        "identity_card": [
             "بطاقة التعريف", "cnie", "cin", "carte nationale",
-            "رخصة القيادة", "جواز السفر",
+            "carte d'identité", "carte d’identité", "لاكارط ناسيونال",
         ],
     }
     for service_id, keywords in keyword_map.items():

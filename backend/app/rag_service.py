@@ -183,6 +183,13 @@ def _is_rate_limit_error(error: BaseException) -> bool:
 # Maps keywords (Arabic/Darija/French) -> canonical service_id.
 # Expanded with 50+ additional Darija slang, French partials, and synonyms.
 _SERVICE_KEYWORDS: Dict[str, List[str]] = {
+    "identity_card": [
+        "بطاقة التعريف الوطنية", "البطاقة الوطنية", "بطاقة التعريف",
+        "تجديد البطاقة", "لاكارط ناسيونال", "لاكارت ناسيونال",
+        "carte nationale d'identité", "carte nationale d’identité",
+        "carte d'identité", "carte d’identité", "cnie", "cin",
+        "national identity card", "identity card",
+    ],
     "criminal_record": [
         "السجل العدلي", "سجل عدلي", "casier judiciaire", "criminal record",
         "الكازي", "كازي جوديسيار",
@@ -303,8 +310,11 @@ def _load_kb_nodes() -> List[KBNode]:
                         metadata={**base_meta, "node_type": "faq"},
                     ))
 
-            # One node per scalar field
-            for field_key in ("description", "fees", "validity_period", "note"):
+            # One node per common scalar field.
+            indexed_fields = {
+                "description", "fees", "validity_period", "note",
+            }
+            for field_key in indexed_fields:
                 value = data.get(field_key)
                 if value and isinstance(value, str):
                     nodes.append(KBNode(
@@ -346,6 +356,41 @@ def _load_kb_nodes() -> List[KBNode]:
                         nodes.append(KBNode(
                             text=f"خطوات {svc_name} ({cat}):\n{steps_text}",
                             metadata={**base_meta, "node_type": "general_steps"},
+                        ))
+
+            # Index every remaining structured field instead of silently
+            # dropping parts of the knowledge base.  This keeps the Railway
+            # friendly BM25 implementation complete without loading Chroma,
+            # LlamaIndex or a transformer model into the 512 MB container.
+            handled_fields = {
+                "service_name_ar", "service_name_fr", "service_name_en",
+                "faq", "required_documents", "general_steps", *indexed_fields,
+            }
+            for field_key, value in data.items():
+                if field_key in handled_fields or value in (None, "", [], {}):
+                    continue
+
+                sections: List[tuple[str, Any]] = []
+                if isinstance(value, dict):
+                    sections.extend((f"{field_key}.{key}", item) for key, item in value.items())
+                else:
+                    sections.append((field_key, value))
+
+                for section_key, section_value in sections:
+                    if isinstance(section_value, list):
+                        section_text = "\n".join(
+                            f"- {item}" if not isinstance(item, (dict, list))
+                            else f"- {json.dumps(item, ensure_ascii=False)}"
+                            for item in section_value
+                        )
+                    elif isinstance(section_value, dict):
+                        section_text = json.dumps(section_value, ensure_ascii=False)
+                    else:
+                        section_text = str(section_value)
+                    if section_text.strip():
+                        nodes.append(KBNode(
+                            text=f"{svc_name} - {section_key}:\n{section_text}",
+                            metadata={**base_meta, "node_type": field_key},
                         ))
 
         # ── Markdown Files ──
@@ -542,13 +587,29 @@ class OmniAgentRAG:
             bm25_nodes: List[ScoredNode] = []
             if self.bm25_retriever and self._bm25_index is not None:
                 try:
+                    # Search with both the user's wording and the normalized
+                    # Arabic rewrite.  Previously the rewrite was computed but
+                    # never used, which especially hurt French/Darija queries.
                     query_tokens = _tokenize_arabic(user_query)
+                    if rewritten_query != user_query:
+                        query_tokens.extend(_tokenize_arabic(rewritten_query))
                     scores = self._bm25_index.get_scores(query_tokens)
 
-                    # Get top-10 indices by BM25 score (pure Python, no numpy)
+                    # Apply a known service filter before taking the top hits.
+                    # Filtering only the global top-10 could discard every
+                    # relevant node for a smaller service collection.
                     indexed_scores = list(enumerate(scores))
-                    indexed_scores.sort(key=lambda x: x[1], reverse=True)
-                    top_indices = indexed_scores[:10]
+                    service_scores = indexed_scores
+                    if clean_service:
+                        service_scores = [
+                            item for item in indexed_scores
+                            if self._bm25_nodes[item[0]].metadata.get("service_type", "")
+                            == clean_service
+                        ]
+                        if not service_scores:
+                            service_scores = indexed_scores
+                    service_scores.sort(key=lambda x: x[1], reverse=True)
+                    top_indices = service_scores[:10]
 
                     raw_bm25: List[ScoredNode] = []
                     for idx, score in top_indices:
@@ -558,23 +619,32 @@ class OmniAgentRAG:
                                 score=float(score),
                             ))
 
-                    if clean_service:
-                        # Post-filter BM25 results by service type
-                        bm25_nodes = [
-                            n
-                            for n in raw_bm25
-                            if n.node.metadata.get("service_type", "")
-                            == clean_service
-                        ]
-                        # If too few matches after filter, keep unfiltered
-                        if len(bm25_nodes) < 2:
-                            bm25_nodes = raw_bm25[:5]
-                    else:
-                        bm25_nodes = raw_bm25[:5]
+                    bm25_nodes = raw_bm25[:5]
                 except Exception as bm25_err:
                     print(f"[WARN] BM25 retrieval failed: {bm25_err}")
 
             combined = bm25_nodes[:5]
+
+            # A positive BM25 score alone is not enough: a generic word can
+            # otherwise make an unrelated question look highly confident.
+            # Require a meaningful fraction of the original question to be
+            # present in the retrieved context before sending it to Gemini.
+            original_tokens = set(_tokenize_arabic(user_query))
+            retrieved_tokens = {
+                token
+                for scored_node in combined
+                for token in _tokenize_arabic(scored_node.node.text)
+            }
+            lexical_coverage = (
+                len(original_tokens & retrieved_tokens) / len(original_tokens)
+                if original_tokens else 0.0
+            )
+            if lexical_coverage < 0.25:
+                return self._fallback_query(
+                    user_query,
+                    service_type,
+                    reason="Retrieved context has insufficient lexical coverage",
+                )
 
             # Step 4: Build context from retrieved nodes
             context_parts = [
@@ -601,8 +671,13 @@ class OmniAgentRAG:
             answer_text = _llm_generate(self._gemini, prompt)
 
             if not answer_text:
-                # LLM failed -- return raw KB context as answer
+                # LLM failed -- return the curated FAQ answer when the best
+                # hit is an FAQ, not the internal "question/answer" wrapper.
                 answer_text = context_parts[0] if context_parts else ""
+                if combined and combined[0].node.metadata.get("node_type") == "faq":
+                    _, separator, faq_answer = answer_text.partition("جواب:")
+                    if separator and faq_answer.strip():
+                        answer_text = faq_answer.strip()
 
             # Step 7: Extract metadata from retrieved nodes
             sources: List[str] = []
@@ -610,7 +685,11 @@ class OmniAgentRAG:
                 meta = scored_node.node.metadata
                 fp = meta.get("file_path", "") or meta.get("file_name", "")
                 if fp:
-                    rel_path = Path(fp).name
+                    path = Path(fp)
+                    try:
+                        rel_path = str(path.relative_to(KNOWLEDGE_DIR)).replace("\\", "/")
+                    except ValueError:
+                        rel_path = path.name
                     if rel_path not in sources:
                         sources.append(rel_path)
 
@@ -618,7 +697,7 @@ class OmniAgentRAG:
             n_results = len(combined)
             n_bm25_hits = len(bm25_nodes)
             if n_results > 0:
-                base = 0.80
+                base = 0.55 + (0.25 * lexical_coverage)
                 source_boost = min(0.10, 0.02 * len(sources))
                 bm25_boost = 0.05 if n_bm25_hits > 0 else 0.0
                 confidence = round(

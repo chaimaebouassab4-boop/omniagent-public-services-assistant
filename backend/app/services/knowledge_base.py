@@ -11,6 +11,7 @@ KB_ROOT = PROJECT_ROOT / "tests" / "knowledge_base"
 
 # Canonical service id -> knowledge base folder name.
 SERVICE_DIRS = {
+    "identity_card": "identity_card",
     "residence_certificate": "residence",
     "birth_certificate": "birth",
     "marriage_contract": "marriage",
@@ -26,6 +27,12 @@ SERVICE_DIRS = {
 COMMON_KB_PATH = KB_ROOT / "common" / "faq.json"
 
 SERVICE_ALIASES = {
+    "cin": "identity_card",
+    "cnie": "identity_card",
+    "identity": "identity_card",
+    "identity_card": "identity_card",
+    "carte_identite": "identity_card",
+    "carte_nationale": "identity_card",
     "birth": "birth_certificate",
     "naissance": "birth_certificate",
     "residence": "residence_certificate",
@@ -245,6 +252,22 @@ def answer_with_metadata(
     """Return the best KB answer with confidence score and source files."""
     canonical_service_id = normalize_service_id(service_id)
 
+    # Exact stored FAQs are already curated answers. Return them before asking
+    # the generative RAG layer so the model cannot paraphrase them into a less
+    # precise or unrelated procedure.
+    sources = _source_label(canonical_service_id)
+    knowledge = load_service_knowledge(service_id)
+    normalized_message = user_message.casefold().strip().rstrip("?؟.! ")
+    for entry in knowledge.get("faq", []):
+        question = str(entry.get("question", ""))
+        if question.casefold().strip().rstrip("?؟.! ") == normalized_message:
+            return KnowledgeAnswer(
+                answer=str(entry.get("answer", "")).strip(),
+                confidence=0.95,
+                sources=sources,
+                matched_question=question,
+            )
+
     # Try querying the RAG pipeline first if available
     if use_rag:
         try:
@@ -266,8 +289,6 @@ def answer_with_metadata(
         except Exception:
             pass
 
-    sources = _source_label(canonical_service_id)
-    knowledge = load_service_knowledge(service_id)
     if not knowledge:
         knowledge = load_common_knowledge()
         sources = ["common/faq.json"] if knowledge else []
