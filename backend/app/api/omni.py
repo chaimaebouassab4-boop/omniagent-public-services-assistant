@@ -1336,36 +1336,6 @@ async def admin_case_detail(case_id: int, db: Session = Depends(get_db), current
     return serialize_case(get_case_or_404(db, case_id, current_user))
 
 
-@router.post("/admin/cases/{case_id}/actions/{action}")
-async def admin_review_action(case_id: int, action: str, body: AdminCaseActionBody,
-                              db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not current_user.is_admin:
-        raise HTTPException(403, "Admin access required")
-    # Existing approval/change routes retain their validation and audit handling.
-    if action == "approve":
-        return await admin_approve_case(case_id, db, current_user)
-    if action == "request-changes":
-        return await admin_request_case_changes(case_id, body, db, current_user)
-    case = get_case_or_404(db, case_id, current_user)
-    if action == "start-review":
-        advance_case(db, case, "UNDER_REVIEW", current_user)
-        case.workflow_data = {**(case.workflow_data or {}), "assignedAgentId": current_user.id}
-    elif action == "reject":
-        if not (body.reason or "").strip():
-            raise HTTPException(400, "A rejection reason is required")
-        advance_case(db, case, "REJECTED", current_user)
-        log_action(db, case.id, "rejected", current_user.id, {"reason": body.reason})
-    elif action == "note":
-        if not (body.reason or "").strip():
-            raise HTTPException(400, "A note is required")
-        log_action(db, case.id, "internal_note", current_user.id, {"note": body.reason})
-    else:
-        raise HTTPException(404, "Unknown action")
-    db.commit()
-    db.refresh(case)
-    return {"action": action, "case": serialize_case(case)}
-
-
 @router.post("/admin/cases/{case_id}/actions/approve")
 async def admin_approve_case(
     case_id: int,
@@ -1413,7 +1383,7 @@ async def admin_approve_case(
 @router.post("/admin/cases/{case_id}/actions/request-changes")
 async def admin_request_case_changes(
     case_id: int,
-    body: AdminCaseActionBody,
+    body: AdminCaseActionBody = AdminCaseActionBody(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -1452,6 +1422,36 @@ async def admin_request_case_changes(
         "case": serialize_case(case),
         "notificationPreview": {"channel": "SMS / WhatsApp", **preview},
     }
+
+
+@router.post("/admin/cases/{case_id}/actions/{action}")
+async def admin_review_action(case_id: int, action: str, body: AdminCaseActionBody = AdminCaseActionBody(),
+                              db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.is_admin:
+        raise HTTPException(403, "Admin access required")
+    # Existing approval/change routes retain their validation and audit handling.
+    if action == "approve":
+        return await admin_approve_case(case_id, db, current_user)
+    if action == "request-changes":
+        return await admin_request_case_changes(case_id, body, db, current_user)
+    case = get_case_or_404(db, case_id, current_user)
+    if action == "start-review":
+        advance_case(db, case, "UNDER_REVIEW", current_user)
+        case.workflow_data = {**(case.workflow_data or {}), "assignedAgentId": current_user.id}
+    elif action == "reject":
+        if not (body.reason or "").strip():
+            raise HTTPException(400, "A rejection reason is required")
+        advance_case(db, case, "REJECTED", current_user)
+        log_action(db, case.id, "rejected", current_user.id, {"reason": body.reason})
+    elif action == "note":
+        if not (body.reason or "").strip():
+            raise HTTPException(400, "A note is required")
+        log_action(db, case.id, "internal_note", current_user.id, {"note": body.reason})
+    else:
+        raise HTTPException(404, "Unknown action")
+    db.commit()
+    db.refresh(case)
+    return {"action": action, "case": serialize_case(case)}
 
 
 @router.get("/admin/notifications")
