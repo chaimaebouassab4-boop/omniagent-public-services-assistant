@@ -28,6 +28,7 @@ from app.services.case_notifications import notification_draft
 from app.services.case_receipt import render_case_receipt
 from app.services.citizen_workflow import snapshot, attach_profile_document, analyze_file
 from app.services.mock_citizens import verify_mock_profile
+from app.services.conversation_state import ConversationState, advance, load_state
 
 router = APIRouter(prefix="/api", tags=["omni"])
 
@@ -197,6 +198,7 @@ def serialize_message(message: ChatMessage, index: int) -> dict:
         "content": message.message,
         "language": language,
         "createdAt": message.created_at.isoformat(),
+        "conversationState": message.conversation_state,
     }
 
 
@@ -797,7 +799,8 @@ def _standalone_count(db: Session, user_id: str, session_id: str | None = None) 
         .filter(ChatMessage.sender != "document_context")
     )
     if session_id:
-        query = query.filter(ChatMessage.session_id == session_id)
+        query = query.filter(ChatMessage.session_id.is_(None) if session_id == "legacy"
+                             else ChatMessage.session_id == session_id)
     return query.count()
 
 
@@ -827,7 +830,8 @@ async def delete_chat_session(
         db.query(ChatMessage)
         .filter(ChatMessage.case_id.is_(None))
         .filter(ChatMessage.user_id == current_user.id)
-        .filter(ChatMessage.session_id == session_id)
+        .filter(ChatMessage.session_id.is_(None) if session_id == "legacy"
+                else ChatMessage.session_id == session_id)
         .delete(synchronize_session=False)
     )
     db.commit()
@@ -842,23 +846,26 @@ async def send_chat_message(
 ) -> dict:
     language = body.language if body.language in MESSAGE_LANGUAGES else "darija"
     session_id = body.sessionId or uuid.uuid4().hex
+    stored_session_id = None if session_id == "legacy" else session_id
+    state = advance(load_state(db, current_user.id, session_id), body.content, language)
 
     conversation_history = _recent_chat_history(
         db.query(ChatMessage)
         .filter(ChatMessage.case_id.is_(None))
         .filter(ChatMessage.user_id == current_user.id)
-        .filter(ChatMessage.session_id == session_id)
+        .filter(ChatMessage.session_id == stored_session_id)
         .filter(ChatMessage.sender.in_(("user", "assistant")))
     )
 
     user_msg = ChatMessage(
-        case_id=None, user_id=current_user.id, session_id=session_id,
-        sender="user", message=body.content, language=language
+        case_id=None, user_id=current_user.id, session_id=stored_session_id,
+        sender="user", message=body.content, language=language,
+        conversation_state=state.model_dump(mode="json"),
     )
     db.add(user_msg)
 
     # Detect service if keyword matches, else None (searches all services)
-    detected_service = detect_service_id(body.content)
+    detected_service = state.current_procedure_id
 
     # ── Guardrail: detect clearly out-of-scope or gibberish input ────────────
     _MEANINGFUL_MIN_CHARS = 3
@@ -914,10 +921,11 @@ async def send_chat_message(
         assistant_msg = ChatMessage(
             case_id=None,
             user_id=current_user.id,
-            session_id=session_id,
+            session_id=stored_session_id,
             sender="assistant",
             message=answer_text,
             language=language,
+            conversation_state=state.model_dump(mode="json"),
         )
         db.add(assistant_msg)
         db.commit()
@@ -929,7 +937,8 @@ async def send_chat_message(
         rag_res = query_rag(
             user_query=body.content,
             service_type=detected_service,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            conversation_state=state.model_dump(mode="json"),
         )
         answer_text = rag_res.get("answer", "").strip()
         # Only fall back if RAG is explicitly offline (fallback_reason), NOT for every answer
@@ -967,16 +976,35 @@ async def send_chat_message(
     assistant_msg = ChatMessage(
         case_id=None,
         user_id=current_user.id,
-        session_id=session_id,
+        session_id=stored_session_id,
         sender="assistant",
         message=answer_text,
         language=language,
+        conversation_state=state.model_dump(mode="json"),
     )
     db.add(assistant_msg)
     db.commit()
     db.refresh(assistant_msg)
 
-    return serialize_message(assistant_msg, _standalone_count(db, current_user.id, session_id))
+    result = serialize_message(assistant_msg, _standalone_count(db, current_user.id, session_id))
+    result["conversationState"] = state.model_dump(mode="json")
+    if "rag_res" in locals():
+        result.update({key: rag_res[key] for key in
+                       ("chunks", "confidence", "sources", "backend", "threshold", "candidate_count", "fallback_reason")
+                       if key in rag_res})
+    return result
+
+
+@router.get("/chat/sessions/{session_id}/state", response_model=ConversationState)
+def get_conversation_state(session_id: str, db: Session = Depends(get_db),
+                           current_user: User = Depends(get_current_user)):
+    query = db.query(ChatMessage).filter(ChatMessage.user_id == current_user.id,
+                                        ChatMessage.case_id.is_(None))
+    query = query.filter(ChatMessage.session_id.is_(None) if session_id == "legacy"
+                         else ChatMessage.session_id == session_id)
+    if query.first() is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return load_state(db, current_user.id, session_id)
 
 
 from app.services.document_analyzer import (  # noqa: E402

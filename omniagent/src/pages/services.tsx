@@ -6,7 +6,7 @@ import { useListServices, useCreateCase } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { fetchMe } from "@/lib/auth";
+import { fetchMe, isAuthenticated } from "@/lib/auth";
 import {
   Clock, FileText, ArrowRight, ArrowLeft, X, Phone, Mail,
   CheckCircle, ChevronRight, Search, ExternalLink, Banknote,
@@ -23,10 +23,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useLocation, Link } from "wouter";
+import { useLocation, useSearch, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { analyzeAndExtractDocument } from "@/lib/documents";
 import { SERVICES_META } from "@/lib/services-data";
+import { HOME_LIFE_EVENTS } from "@/lib/home-config";
+import { matchesLifeEvent, matchesServiceSearch } from "@/lib/service-discovery";
 
 /* ─── Form Schema ─────────────────────────────────────────────── */
 const formSchema = z.object({
@@ -118,6 +120,10 @@ const getDocumentLabel = (reqKey: string, lang: string) => {
 export default function Services() {
   const { language, isRtl } = useI18n();
   const { data: services, isLoading } = useListServices();
+  const queryString = useSearch();
+  const params = useMemo(() => new URLSearchParams(queryString), [queryString]);
+  const lifeEvent = HOME_LIFE_EVENTS.find((event) => event.id === params.get("lifeEvent"));
+  const openedQueryRef = useRef<string | null>(null);
   const [selectedService, setSelectedService] = useState<ServiceFromApi | null>(null);
   const [detailService, setDetailService] = useState<ServiceFromApi | null>(null);
   const [search, setSearch] = useState("");
@@ -126,7 +132,7 @@ export default function Services() {
   const [_, setLocation] = useLocation();
 
   const createCase = useCreateCase();
-  const profile = useQuery({ queryKey: ["profile"], queryFn: fetchMe, staleTime: 0 });
+  const profile = useQuery({ queryKey: ["profile"], queryFn: fetchMe, staleTime: 0, enabled: isAuthenticated() });
   const [documentSelections, setDocumentSelections] = useState<Record<string, string>>({});
   const { toast } = useToast();
   const cinInputRef = useRef<HTMLInputElement>(null);
@@ -136,6 +142,19 @@ export default function Services() {
     resolver: zodResolver(formSchema),
     defaultValues: { applicantName: "", applicantEmail: "", applicantPhone: "", notes: "" },
   });
+
+  useEffect(() => {
+    setSearch(params.get("q") ?? "");
+    setActiveCategory("all");
+  }, [params]);
+
+  useEffect(() => {
+    if (!services || openedQueryRef.current === queryString) return;
+    openedQueryRef.current = queryString;
+    const serviceId = Number(params.get("service"));
+    const requestedService = services.find((service) => service.id === serviceId && service.isActive !== false);
+    setDetailService(requestedService ?? null);
+  }, [services, params, queryString]);
 
   // Check for pre-filled data passed from chat.tsx (Feature 2 Task 2.2)
   useEffect(() => {
@@ -235,12 +254,11 @@ export default function Services() {
 
   const filtered = useMemo(() => {
     return (services ?? []).filter((s) => {
-      const q = search.toLowerCase();
-      const matchesSearch = !q || s.nameFr.toLowerCase().includes(q) || s.nameAr.includes(q);
+      const matchesSearch = matchesServiceSearch(s, search);
       const matchesCategory = activeCategory === "all" || SERVICE_CATEGORY[s.id] === activeCategory;
-      return matchesSearch && matchesCategory;
+      return s.isActive !== false && matchesSearch && matchesCategory && (!lifeEvent || matchesLifeEvent(s, lifeEvent.id));
     });
-  }, [services, search, activeCategory]);
+  }, [services, search, activeCategory, lifeEvent]);
 
   const getName = (s: ServiceFromApi) => language === "fr" ? s.nameFr : s.nameAr;
   const getDesc = (s: ServiceFromApi) => language === "fr" ? s.descriptionFr : s.descriptionAr;
@@ -286,6 +304,7 @@ export default function Services() {
         </div>
 
         {/* ── Category Filters ────────────────────────────────── */}
+        {lifeEvent && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 text-sm"><p>{lifeEvent.title}</p><Button variant="outline" size="sm" onClick={() => setLocation("/services")}>{language === "fr" ? "Voir toutes les démarches" : "عرض جميع الإجراءات"}</Button></div>}
         <div className={`flex items-center gap-1 overflow-x-auto pb-1 ${isRtl ? "flex-row-reverse" : ""}`}>
           {(Object.keys(CATEGORIES) as CategoryKey[]).map((key) => (
             <button
@@ -419,7 +438,7 @@ export default function Services() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => { setSearch(""); setActiveCategory("all"); }}
+                  onClick={() => { setSearch(""); setActiveCategory("all"); setLocation("/services"); }}
                   className="text-xs"
                 >
                   {language === "fr" ? "Réinitialiser les filtres" : "إعادة تعيين"}
@@ -580,7 +599,14 @@ export default function Services() {
                   </Button>
                   <Button
                     className="flex-1 gap-2 font-medium bg-primary hover:bg-primary/90 text-primary-foreground"
-                    onClick={() => { setDetailService(null); setSelectedService(detailService); }}
+                    onClick={() => {
+                      if (!isAuthenticated()) {
+                        setLocation(`/login?returnTo=${encodeURIComponent(`/services?service=${detailService.id}`)}`);
+                        return;
+                      }
+                      setDetailService(null);
+                      setSelectedService(detailService);
+                    }}
                   >
                     {language === "fr" ? "Démarrer la démarche" : "بدء الإجراء"}
                     <Arrow className="w-4 h-4" />

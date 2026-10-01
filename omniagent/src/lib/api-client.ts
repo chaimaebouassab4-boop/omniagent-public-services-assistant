@@ -41,6 +41,8 @@ async function apiFetch<T>(
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface Service {
   id: number;
+  category?: string;
+  isActive?: boolean;
   nameFr: string;
   nameAr: string;
   descriptionFr: string;

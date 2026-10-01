@@ -33,6 +33,7 @@ import Chat from "@/pages/chat";
 import Profile from "@/pages/profile";
 import Admin from "@/pages/admin";
 import HistoryPage from "@/pages/history";
+import Help from "@/pages/help";
 
 function handleApiError(error: unknown): void {
   if (
@@ -93,6 +94,7 @@ function AnalyticsTracker() {
       "/chat": "Assistant IA",
       "/dashboard": "Tableau de bord",
       "/history": "Historique et suivi",
+      "/help": "Aide",
       "/profile": "Profil",
       "/admin": "Administration",
     };
@@ -114,6 +116,7 @@ function Router() {
         <GuestOnly><Signup /></GuestOnly>
       </Route>
       <Route path="/services" component={Services} />
+      <Route path="/help" component={Help} />
       <Route path="/chat">
         <Protected><Chat /></Protected>
       </Route>

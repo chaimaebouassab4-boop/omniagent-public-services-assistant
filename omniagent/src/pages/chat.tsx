@@ -1,9 +1,10 @@
 import { useI18n } from "@/lib/i18n";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,8 +16,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Upload, Mic, Send, Bot, User, FileText, Loader2, MessageSquarePlus,
+  Upload, Mic, Send, User, FileText, Loader2, MessageSquarePlus,
   History, BookOpen, ShieldCheck, Trash2, Compass, FileCheck2, FolderClock,
+  MoreHorizontal, MessageSquare,
+  Landmark,
   Sparkles, ArrowUpRight, X, Image as ImageIcon, Volume2, Square,
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -52,6 +55,7 @@ export default function Chat() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [playback, setPlayback] = useState<{ messageId: string; state: "loading" | "playing" } | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   /** Optimistic messages shown while waiting for RAG response */
   const [pendingUserMsg, setPendingUserMsg] = useState<ChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -355,7 +359,7 @@ export default function Chat() {
     });
   };
 
-  const prompts = language === "fr" 
+  const prompts = language === "fr"
     ? [
         "Comment renouveler ma carte d'identité (CIN) ?",
         "Quels documents pour un certificat de résidence ?",
@@ -376,104 +380,138 @@ export default function Chat() {
         "شحال ديال الوقت باش يخرج السجل العدلي؟",
       ];
 
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const yesterdayStart = new Date(todayStart);
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+  const historyGroups = [
+    { label: language === "fr" ? "Aujourd'hui" : "اليوم", items: sessions.filter((session) => new Date(session.updatedAt) >= todayStart) },
+    { label: language === "fr" ? "Hier" : "أمس", items: sessions.filter((session) => new Date(session.updatedAt) >= yesterdayStart && new Date(session.updatedAt) < todayStart) },
+    { label: language === "fr" ? "Plus ancien" : "الأقدم", items: sessions.filter((session) => !(new Date(session.updatedAt) >= yesterdayStart)) },
+  ];
+  const activeSession = sessions.find((session) => session.id === activeSessionId);
+
+  const historyList = (
+    <div className="space-y-6">
+      {historyGroups.filter((group) => group.items.length > 0).map((group) => (
+        <div key={group.label}>
+          <h3 className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{group.label}</h3>
+          <div className="space-y-2">
+            {group.items.map((session) => (
+              <div
+                key={session.id}
+                className={`group relative flex min-w-0 items-center rounded-xl border bg-card transition-colors ${
+                  activeSessionId === session.id
+                    ? "border-primary/50 bg-primary/[0.06]"
+                    : "border-border hover:border-primary/25 hover:bg-muted/35"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => { setActiveSessionId(session.id); setHistoryOpen(false); }}
+                  className={`flex min-w-0 flex-1 items-center gap-3 px-3 py-3 ${isRtl ? "text-right" : "text-left"}`}
+                  aria-current={activeSessionId === session.id ? "page" : undefined}
+                  aria-label={language === "fr" ? `Ouvrir la conversation ${session.title}` : `فتح المحادثة ${session.title}`}
+                >
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${activeSessionId === session.id ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-muted/40 text-muted-foreground"}`}>
+                    <MessageSquare className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span dir="auto" className={`block truncate text-sm text-foreground ${activeSessionId === session.id ? "font-semibold" : "font-medium"}`}>{session.title}</span>
+                    <span className="mt-0.5 block text-[11px] text-muted-foreground">{new Date(session.updatedAt).toLocaleDateString(language === "fr" ? "fr-FR" : "ar-MA", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                  </span>
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="me-2 h-8 w-8 shrink-0 rounded-lg text-muted-foreground opacity-70 hover:bg-background hover:opacity-100 focus-visible:opacity-100" aria-label={language === "fr" ? `Options pour ${session.title}` : `خيارات ${session.title}`}>
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align={isRtl ? "start" : "end"}>
+                    <DropdownMenuItem aria-label={language === "fr" ? `Supprimer la conversation ${session.title}` : `حذف المحادثة ${session.title}`} disabled={deleteSessionMutation.isPending} onSelect={() => { setHistoryOpen(false); setSessionToDelete(session.id); }} className="gap-2 text-destructive focus:text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                      {language === "fr" ? "Supprimer" : "حذف"}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {!sessions.length && <p className="px-2 py-6 text-center text-sm text-muted-foreground">{language === "fr" ? "Aucune ancienne conversation." : "لا توجد محادثات سابقة."}</p>}
+    </div>
+  );
+
   return (
-    <AppLayout>
-      <div className="max-w-6xl mx-auto h-[calc(100vh-80px)] flex flex-col">
-        <div className={`mb-4 shrink-0 flex items-center justify-between ${isRtl ? "flex-row-reverse" : ""}`}>
-          <h1 className="text-3xl font-bold text-foreground">{t("nav.chat")}</h1>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={handleNewConversation}
-            data-testid="button-new-conversation"
-          >
-            <MessageSquarePlus className="w-4 h-4" />
-            {language === "fr" ? "Nouvelle discussion" : "محادثة جديدة"}
-          </Button>
+    <AppLayout fullHeight>
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-3 bg-background">
+        <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:px-5 lg:px-6">
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold text-[#17365d] dark:text-foreground sm:text-xl">{t("nav.chat")}</h1>
+            <p className="hidden text-xs text-muted-foreground sm:block">{language === "fr" ? "Information et accompagnement pour vos démarches administratives" : "المعلومات والمواكبة في إجراءاتك الإدارية"}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 lg:hidden">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5"
+              onClick={() => setHistoryOpen(true)}
+              aria-label={language === "fr" ? "Ouvrir l'historique" : "فتح سجل المحادثات"}
+            >
+              <History className="h-4 w-4" />
+              <span className="hidden sm:inline">{language === "fr" ? "Historique" : "سجل المحادثات"}</span>
+            </Button>
+            <Button variant="outline" size="icon" className="h-9 w-9" onClick={handleNewConversation} aria-label={language === "fr" ? "Nouvelle discussion" : "محادثة جديدة"}>
+              <MessageSquarePlus className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
-        <div className="flex-1 min-h-0 grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
-          <Card className="flex max-h-44 min-h-0 flex-col overflow-hidden md:max-h-none">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <History className="w-4 h-4" />
-                {language === "fr" ? "Historique" : "سجل المحادثات"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
-              <div className="space-y-2">
-                {sessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className={`flex items-start justify-between rounded-lg border p-3 transition-colors ${
-                      activeSessionId === session.id
-                        ? "border-primary bg-primary/10"
-                        : "hover:bg-muted"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setActiveSessionId(session.id)}
-                      className={`flex-1 min-w-0 ${isRtl ? 'text-right' : 'text-left'}`}
-                    >
-                      <div className="truncate text-sm font-medium">{session.title}</div>
-                      <div className="mt-1 truncate text-xs text-muted-foreground">
-                        {session.preview}
-                      </div>
-                      <div className="mt-2 text-[11px] text-muted-foreground">
-                        {new Date(session.updatedAt).toLocaleDateString(
-                          language === "fr" ? "fr-FR" : "ar-MA",
-                        )}
-                      </div>
-                    </button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-destructive/80 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSessionToDelete(session.id);
-                      }}
-                      disabled={deleteSessionMutation.isPending}
-                      title={language === "fr" ? "Supprimer cette discussion" : "حذف هذه المحادثة"}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span className="sr-only">Delete</span>
-                    </Button>
-                  </div>
-                ))}
-                {!sessions.length && (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    {language === "fr" ? "Aucune ancienne conversation." : "لا توجد محادثات سابقة."}
-                  </p>
-                )}
+        <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden">
+          <aside className="hidden min-h-0 w-[288px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card lg:flex xl:w-[320px] 2xl:w-[336px]" aria-label={language === "fr" ? "Historique des conversations" : "سجل المحادثات"}>
+            <div className="shrink-0 border-b border-border px-4 py-4">
+              <div className="mb-3 flex items-center gap-2">
+                <History className="h-4 w-4 text-primary" />
+                <h2 className="text-xs font-semibold uppercase tracking-[0.1em] text-[#17365d] dark:text-foreground">{language === "fr" ? "Historique des conversations" : "سجل المحادثات"}</h2>
               </div>
-            </CardContent>
-          </Card>
+              <Button size="sm" className="w-full justify-start gap-2 rounded-lg" onClick={handleNewConversation} data-testid="button-new-conversation" aria-label={language === "fr" ? "Créer une nouvelle conversation" : "إنشاء محادثة جديدة"}>
+                <MessageSquarePlus className="h-4 w-4" />
+                {language === "fr" ? "Nouvelle conversation" : "محادثة جديدة"}
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">{historyList}</div>
+          </aside>
 
-          <Card className="flex flex-col min-h-0 overflow-hidden shadow-sm">
-          <CardContent className="flex-1 flex flex-col p-0 overflow-hidden bg-muted/10">
-            <ScrollArea className="flex-1 p-6" viewportRef={scrollRef}>
-              <div className="space-y-6">
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-muted/20" aria-label={language === "fr" ? "Conversation" : "المحادثة"}>
+            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <h2 dir="auto" className="truncate text-sm font-semibold text-[#17365d] dark:text-foreground">
+                  {activeSession?.title || (language === "fr" ? "Nouvelle conversation" : "محادثة جديدة")}
+                </h2>
+                <p className="text-xs text-muted-foreground">{language === "fr" ? "Assistant administratif numérique · Sources documentaires vérifiées" : "مساعد إداري رقمي · مصادر وثائقية موثوقة"}</p>
+              </div>
+            </header>
+            <ScrollArea className="min-h-0 flex-1" viewportRef={scrollRef}>
+              <div className="space-y-5 px-3 py-5 sm:px-5 lg:px-6">
                 {!displayMessages.length && !sendChatMessage.isPending && (
-                  <div className="max-w-2xl mx-auto py-6 sm:py-10 px-2 text-center my-auto">
+                  <div className="mx-auto w-full max-w-3xl px-1 py-4 text-center sm:py-8">
                     {/* Assistant Avatar Badge */}
-                    <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center mx-auto mb-4 shadow-xs">
-                      <Bot className="w-7 h-7" />
+                    <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-lg border border-primary/20 bg-primary/5 text-primary">
+                      <Landmark className="h-5 w-5" />
                     </div>
 
                     {/* Structured Welcome Title */}
-                    <h2 className="text-lg sm:text-xl font-bold text-foreground mb-2.5 leading-snug">
+                    <h2 className="mb-2 text-lg font-semibold leading-snug text-foreground sm:text-xl">
                       {language === "fr"
-                        ? "Bonjour, je suis l'assistant administratif OmniAgent."
+                        ? "Bonjour, comment puis-je vous accompagner ?"
                         : language === "ar"
-                        ? "مرحباً، أنا المساعد الإداري أومني إيجنت (OmniAgent)."
-                        : "السلام عليكم، أنا المساعد الإداري OmniAgent."}
+                        ? "مرحباً، كيف يمكنني مساعدتك؟"
+                        : "السلام عليكم، كيفاش نقدر نعاونك؟"}
                     </h2>
 
                     {/* Structured Description */}
-                    <p className="text-sm text-muted-foreground leading-relaxed max-w-lg mx-auto mb-7">
+                    <p className="mx-auto mb-5 max-w-lg text-sm leading-relaxed text-muted-foreground">
                       {language === "fr"
                         ? "Je peux vous orienter dans vos démarches, vérifier la conformité de vos pièces jointes ou suivre l'état d'avancement de vos dossiers."
                         : language === "ar"
@@ -482,9 +520,9 @@ export default function Chat() {
                     </p>
 
                     {/* 3 Structured Capabilities */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-7 text-start" dir={isRtl ? "rtl" : "ltr"}>
-                      <div className="p-3.5 rounded-xl border border-border bg-card/60 hover:bg-card hover:border-primary/30 transition-all">
-                        <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-2.5">
+                    <div className="mb-6 grid grid-cols-1 gap-2 text-start sm:grid-cols-3" dir={isRtl ? "rtl" : "ltr"}>
+                      <div className="rounded-md border border-border bg-muted/20 p-3">
+                        <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-md bg-primary/5 text-primary">
                           <Compass className="w-4 h-4" />
                         </div>
                         <h3 className="text-xs font-semibold text-foreground mb-1">
@@ -495,8 +533,8 @@ export default function Chat() {
                         </p>
                       </div>
 
-                      <div className="p-3.5 rounded-xl border border-border bg-card/60 hover:bg-card hover:border-primary/30 transition-all">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2.5">
+                      <div className="rounded-md border border-border bg-muted/20 p-3">
+                        <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-md bg-primary/5 text-primary">
                           <FileCheck2 className="w-4 h-4" />
                         </div>
                         <h3 className="text-xs font-semibold text-foreground mb-1">
@@ -507,8 +545,8 @@ export default function Chat() {
                         </p>
                       </div>
 
-                      <div className="p-3.5 rounded-xl border border-border bg-card/60 hover:bg-card hover:border-primary/30 transition-all">
-                        <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-2.5">
+                      <div className="rounded-md border border-border bg-muted/20 p-3">
+                        <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-md bg-primary/5 text-primary">
                           <FolderClock className="w-4 h-4" />
                         </div>
                         <h3 className="text-xs font-semibold text-foreground mb-1">
@@ -521,7 +559,7 @@ export default function Chat() {
                     </div>
 
                     {/* Suggestions Section on Welcome Screen */}
-                    <div className="space-y-2.5 text-start" dir={isRtl ? "rtl" : "ltr"}>
+                    <div id="questions-frequentes" className="space-y-2.5 text-start" dir={isRtl ? "rtl" : "ltr"}>
                       <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 px-1">
                         <Sparkles className="w-3.5 h-3.5 text-primary" />
                         <span>{language === "fr" ? "Exemples de questions fréquentes :" : "أمثلة على الأسئلة الشائعة:"}</span>
@@ -532,7 +570,7 @@ export default function Chat() {
                             key={i}
                             type="button"
                             onClick={() => setMessageInput(p)}
-                            className="group flex items-center justify-between p-3 rounded-xl border border-border bg-card hover:border-primary/40 hover:bg-primary/5 transition-all text-xs text-foreground font-medium text-start"
+                            className="group flex items-center justify-between rounded-md border border-border bg-card p-2.5 text-start text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-primary/5"
                           >
                             <span className="truncate flex-1">{p}</span>
                             <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0 ml-2" />
@@ -543,11 +581,11 @@ export default function Chat() {
                   </div>
                 )}
                 {displayMessages.map((msg) => (
-                  <div key={msg.id} className={`flex gap-4 max-w-[85%] ${msg.role === 'user' ? (isRtl ? 'mr-auto flex-row-reverse' : 'ml-auto flex-row-reverse') : (isRtl ? 'ml-auto' : 'mr-auto')}`}>
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm ${msg.role === 'user' ? 'bg-secondary text-white' : 'bg-primary text-white'}`}>
-                      {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
+                  <div key={msg.id} className={`flex min-w-0 gap-2.5 sm:gap-3 ${msg.role === 'user' ? 'max-w-[92%] sm:max-w-[76%] xl:max-w-[70%]' : 'max-w-[94%] sm:max-w-[84%] xl:max-w-[78%]'} ${msg.role === 'user' ? (isRtl ? 'mr-auto flex-row-reverse' : 'ml-auto flex-row-reverse') : (isRtl ? 'ml-auto' : 'mr-auto')}`}>
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${msg.role === 'user' ? 'border-[#17365d] bg-[#17365d] text-white' : 'border-primary/25 bg-card text-primary'}`}>
+                      {msg.role === 'user' ? <User className="h-[18px] w-[18px]" /> : <Landmark className="h-[18px] w-[18px]" />}
                     </div>
-                    <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-secondary text-white rounded-tr-none' : 'bg-card border rounded-tl-none text-card-foreground'}`}>
+                    <div className={`min-w-0 break-words rounded-xl border px-4 py-3 text-sm leading-relaxed sm:px-5 sm:py-4 ${msg.role === 'user' ? 'border-[#17365d] bg-[#17365d] text-white' : 'border-border bg-card text-card-foreground'}`}>
                       <ChatMessageContent
                         content={msg.content}
                         role={msg.role as "user" | "assistant"}
@@ -594,41 +632,34 @@ export default function Chat() {
                   </div>
                 ))}
                 {sendChatMessage.isPending && (
-                  <div className={`flex gap-4 max-w-[85%] ${isRtl ? 'ml-auto' : 'mr-auto'}`}>
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm bg-primary text-white">
-                      <Bot className="w-5 h-5" />
+                  <div className={`flex max-w-[94%] gap-2.5 sm:max-w-[84%] sm:gap-3 xl:max-w-[78%] ${isRtl ? 'ml-auto' : 'mr-auto'}`}>
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-card text-primary">
+                      <Landmark className="h-[18px] w-[18px]" />
                     </div>
-                    <div className="p-4 rounded-2xl text-sm bg-card border rounded-tl-none flex items-center gap-2">
+                    <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm">
                       <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce"></span>
                       <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
                       <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
                     </div>
                   </div>
                 )}
+                {Boolean(displayMessages.length) && !sendChatMessage.isPending && (
+                  <div id="questions-frequentes" className="max-w-2xl pt-2">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">{t("chat.suggested")}</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {prompts.map((prompt, index) => (
+                        <button key={index} type="button" onClick={() => setMessageInput(prompt)} className="truncate rounded-md border bg-card px-3 py-2 text-start text-xs text-foreground transition-colors hover:border-primary/40 hover:bg-primary/5">
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </ScrollArea>
             
-            <div className="p-4 sm:p-5 border-t bg-card shrink-0">
-              {Boolean(displayMessages.length) && (
-                <div className="mb-3">
-                  <div className="text-[11px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-primary" />
-                    <span>{t("chat.suggested")}</span>
-                  </div>
-                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
-                    {prompts.map((p, i) => (
-                      <button 
-                        key={i} 
-                        type="button"
-                        onClick={() => setMessageInput(p)}
-                        className="whitespace-nowrap px-3 py-1 bg-muted/60 hover:bg-muted hover:border-primary/40 text-xs rounded-full border transition-colors text-muted-foreground hover:text-foreground"
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <div className="flex max-h-[50%] min-h-0 shrink-0 flex-col border-t border-border bg-card px-3 py-3 sm:px-5">
+              <div className="min-h-0 overflow-y-auto">
               {/* ── Feature 2: Document Scanning Skeleton or Extracted Document Card ── */}
               {isAnalyzingDoc && stagedFile ? (
                 <div className="mb-3">
@@ -653,7 +684,7 @@ export default function Chat() {
                 </div>
               ) : stagedFile ? (
                 <div
-                  className={`mb-3 p-3 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-between gap-3 shadow-xs animate-in fade-in slide-in-from-bottom-2 duration-150 ${
+                  className={`mb-3 flex items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/10 p-3 animate-in fade-in slide-in-from-bottom-2 duration-150 ${
                     isRtl ? "flex-row-reverse" : ""
                   }`}
                 >
@@ -703,6 +734,7 @@ export default function Chat() {
                   </Button>
                 </div>
               ) : null}
+              </div>
               {recorder.status !== "idle" || isTranscribing ? (
                 <div className="flex items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-2 min-h-14" role="status" aria-live="polite">
                   <span className={`h-3 w-3 shrink-0 rounded-full bg-destructive ${recorder.status === "recording" ? "animate-pulse" : ""}`} aria-hidden="true" />
@@ -731,7 +763,7 @@ export default function Chat() {
                   )}
                   {isTranscribing && <Loader2 className="h-5 w-5 animate-spin text-primary" aria-hidden="true" />}
                 </div>
-              ) : <form onSubmit={handleSendMessage} className="flex gap-2.5">
+              ) : <form onSubmit={handleSendMessage} className="flex shrink-0 items-center gap-0.5 rounded-xl border border-border bg-background p-1.5 sm:gap-1">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -744,11 +776,16 @@ export default function Chat() {
                   type="button"
                   variant={stagedFile ? "secondary" : "outline"}
                   size="icon"
-                  className={`shrink-0 w-12 h-12 rounded-xl ${
+                  className={`h-9 w-9 shrink-0 rounded-md border-0 shadow-none sm:h-10 sm:w-10 ${
                     stagedFile ? "text-primary border-primary/40 bg-primary/10" : "text-muted-foreground"
                   }`}
                   disabled={isUploading}
                   onClick={() => fileInputRef.current?.click()}
+                  aria-label={
+                    stagedFile
+                      ? (language === "fr" ? "Changer la pièce jointe" : "تغيير المرفق")
+                      : (language === "fr" ? "Joindre un document" : "إرفاق وثيقة")
+                  }
                   title={
                     stagedFile
                       ? (language === "fr" ? "Changer la pièce jointe" : "تغيير المرفق")
@@ -757,7 +794,7 @@ export default function Chat() {
                 >
                   {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                 </Button>
-                <Button type="button" variant="outline" size="icon" className="shrink-0 w-12 h-12 rounded-xl text-muted-foreground"
+                <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-md text-muted-foreground sm:h-10 sm:w-10"
                   onClick={() => void handleStartRecording()}
                   disabled={isUploading || sendChatMessage.isPending}
                   title={language === "fr" ? "Enregistrer un message vocal" : "تسجيل رسالة صوتية"}
@@ -772,14 +809,16 @@ export default function Chat() {
                       ? (language === "fr" ? "Ajouter un message avec votre document (optionnel)..." : "أضف رسالة مع الوثيقة (اختياري)...")
                       : t("chat.placeholder")
                   }
-                  className="flex-1 h-12 rounded-xl text-base px-4 bg-muted/50 focus-visible:bg-background"
+                  className="h-9 min-w-0 flex-1 border-0 bg-transparent px-2 text-base shadow-none focus-visible:ring-0 sm:h-10 sm:px-3"
+                  aria-label={language === "fr" ? "Votre message" : "رسالتك"}
                 />
                 <Button 
                   type="submit" 
                   size="icon" 
                   disabled={(!messageInput.trim() && !stagedFile) || sendChatMessage.isPending || isUploading} 
-                  className="shrink-0 w-12 h-12 rounded-xl bg-primary hover:bg-primary/90 text-white transition-all disabled:opacity-50"
+                  className="h-9 w-9 shrink-0 rounded-md bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-50 sm:h-10 sm:w-10"
                   title={language === "fr" ? "Envoyer" : "إرسال"}
+                  aria-label={language === "fr" ? "Envoyer le message" : "إرسال الرسالة"}
                 >
                   {isUploading || sendChatMessage.isPending ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -789,13 +828,26 @@ export default function Chat() {
                 </Button>
               </form>}
             </div>
-          </CardContent>
-          </Card>
+          </section>
         </div>
       </div>
 
+      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+        <SheetContent side={isRtl ? "right" : "left"} className="flex h-full w-[min(88vw,340px)] flex-col gap-0 overflow-hidden p-0 lg:hidden" dir={isRtl ? "rtl" : "ltr"}>
+          <SheetHeader className="shrink-0 border-b px-4 py-5 text-start">
+            <SheetTitle className="text-sm">{language === "fr" ? "Historique des conversations" : "سجل المحادثات"}</SheetTitle>
+          </SheetHeader>
+          <div className="shrink-0 border-b p-3">
+            <Button size="sm" className="w-full justify-start gap-2 rounded-lg" onClick={() => { handleNewConversation(); setHistoryOpen(false); }} aria-label={language === "fr" ? "Créer une nouvelle conversation" : "إنشاء محادثة جديدة"}>
+              <MessageSquarePlus className="h-4 w-4" />{language === "fr" ? "Nouvelle conversation" : "محادثة جديدة"}
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-2.5">{historyList}</div>
+        </SheetContent>
+      </Sheet>
+
       <AlertDialog open={Boolean(sessionToDelete)} onOpenChange={(open) => !open && setSessionToDelete(null)}>
-        <AlertDialogContent className="max-w-md rounded-2xl p-6 border shadow-2xl bg-card">
+        <AlertDialogContent className="max-w-md rounded-xl border bg-card p-6 shadow-lg">
           <AlertDialogHeader className={`space-y-3 ${isRtl ? "text-right" : "text-left"}`}>
             <div className={`flex items-center gap-3.5 ${isRtl ? "flex-row-reverse" : ""}`}>
               <div className="w-12 h-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center shrink-0">

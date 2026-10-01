@@ -9,7 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy backend requirements and install
 COPY backend/requirements.txt ./backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
+COPY backend/requirements-vector.txt ./backend/requirements-vector.txt
+ARG WITH_VECTOR=false
+RUN if [ "$WITH_VECTOR" = "true" ]; then \
+      pip install --no-cache-dir -r backend/requirements-vector.txt; \
+    else pip install --no-cache-dir -r backend/requirements.txt; fi
 
 # Copy backend code, knowledge base and vector database
 COPY backend ./backend

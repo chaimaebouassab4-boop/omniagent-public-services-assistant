@@ -1,7 +1,7 @@
-"""RAG Service Module (OmniAgent RAG) — Lightweight Edition
+"""RAG Service Module (OmniAgent RAG).
 
-Pure BM25 + google.genai implementation.
-Zero LlamaIndex dependencies — runs within Railway's 512 MB RAM limit.
+BM25 default, or explicitly configured Chroma cosine/BGE-M3 retrieval.
+The optional vector runtime needs more memory than the lightweight deployment.
 
 Architecture:
   - BM25 keyword search over local knowledge base JSON/MD files
@@ -20,15 +20,16 @@ from dotenv import load_dotenv
 
 from app.services.gemini_client import GeminiRequestError, generate_text
 
-# Load environment variables from .env if present
-load_dotenv()
-
 # Resolve project paths
 THIS_FILE = Path(__file__).resolve()
 # Root directory of the project (omniagent-public-services-assistant)
 ROOT_DIR = THIS_FILE.parents[2]
 KNOWLEDGE_DIR = ROOT_DIR / "tests" / "knowledge_base"
 EXCLUDED_KB_NAMES = {"test_cases.json", "all_test_cases.json"}
+
+# Load environment variables from .env if present (root and backend)
+load_dotenv(ROOT_DIR / ".env")
+load_dotenv(THIS_FILE.parents[1] / ".env")
 
 
 # ─── Lightweight data classes (replace LlamaIndex TextNode / NodeWithScore) ──
@@ -257,7 +258,7 @@ def _detect_service_from_query(user_query: str) -> Optional[str]:
     query_lower = user_query.lower()
     for service_id, keywords in _SERVICE_KEYWORDS.items():
         for kw in keywords:
-            if kw in user_query or kw.lower() in query_lower:
+            if re.search(r"(?<!\w)" + re.escape(kw.lower()) + r"(?!\w)", query_lower):
                 return service_id
     return None
 
@@ -480,6 +481,11 @@ class OmniAgentRAG:
         self._bm25_nodes: List[KBNode] = []
         self._bm25_index = None
         self._rewrite_cache: Dict[str, str] = {}
+        self._vector = None
+        self._vector_error = None
+        self.backend = os.getenv("RAG_BACKEND", "bm25").lower()
+        if self.backend not in {"bm25", "chroma"}:
+            raise ValueError("RAG_BACKEND must be bm25 or chroma")
         # Allow overriding model name
         if gemini_model:
             os.environ["GEMINI_MODEL"] = gemini_model
@@ -491,6 +497,15 @@ class OmniAgentRAG:
         try:
             # ── 1. Gemini LLM ──
             self._gemini = _create_gemini_model()
+            if self.backend == "chroma":
+                from app.services.vector_retrieval import VectorRetriever
+                try:
+                    self._vector = VectorRetriever.from_environment()
+                    self.initialized = True
+                except Exception as exc:
+                    self._vector_error = str(exc)
+                    print(f"[WARN] Vector retrieval unavailable: {exc}")
+                return
 
             # ── 2. BM25 Retriever (Fast, lightweight ~5MB, ultra-reliable) ──
             try:
@@ -566,6 +581,8 @@ class OmniAgentRAG:
           3. BM25 keyword search with original + rewritten query
           4. Generate answer with the improved direct-answer prompt via Gemini
         """
+        if getattr(self, "backend", "bm25") == "chroma":
+            return self._query_vector(user_query, service_type, conversation_history)
         if not self.initialized:
             return self._fallback_query(
                 user_query, service_type, reason="RAG engine offline"
@@ -740,6 +757,38 @@ class OmniAgentRAG:
                 user_query, service_type, reason=str(e)
             )
 
+    def _query_vector(self, user_query, service_type, conversation_history):
+        from app.services.knowledge_base import load_service_knowledge
+        language = _detect_language(user_query)
+        service = service_type or _detect_service_from_query(user_query)
+        # Give short follow-ups their procedure context without changing the
+        # actual user question sent to the answer model.
+        title = load_service_knowledge(service).get("service_name_ar", "") if service else ""
+        query = f"{title}\n{user_query}" if title else user_query
+        unavailable = ("Je n'ai pas trouvé de source suffisamment pertinente. Précisez la démarche ou votre situation."
+                       if language == "french" else "ما لقيتش معلومات كافية وموثوقة. وضح ليا الخدمة أو الحالة ديالك.")
+        try:
+            if self._vector is None:
+                raise RuntimeError(self._vector_error or "Vector retrieval unavailable")
+            result = self._vector.retrieve(query, _normalize_service_filter(service) if service else None)
+            payload = result.model_dump()
+            payload.update(answer=unavailable, sources=[], language=language)
+            if not result.chunks:
+                payload["fallback_reason"] = "insufficient_vector_evidence"
+                return payload
+            context = "\n\n---\n\n".join(c.content for c in result.chunks)
+            prompt = _prompt_with_history(conversation_history).replace("{context_str}", context).replace("{query_str}", user_query)
+            payload["answer"] = _llm_generate(self._gemini, prompt)
+            if not payload["answer"]:
+                payload["answer"] = context
+                payload["fallback_reason"] = "generation_unavailable_source_extracts"
+            payload["sources"] = list(dict.fromkeys(str(c.metadata.get("file_path") or c.metadata.get("source_url") or "knowledge_base") for c in result.chunks))
+            return payload
+        except Exception as exc:
+            print(f"[WARN] Vector query failed: {exc}")
+            return {"answer": unavailable, "sources": [], "chunks": [], "confidence": 0.0,
+                    "language": language, "backend": "chroma_bge_m3", "fallback_reason": "vector_backend_unavailable"}
+
     # ─── Fallback to Structured KB ───────────────────────────────────────
     def _fallback_query(
         self,
@@ -830,6 +879,7 @@ def query_rag(
     user_query: str,
     service_type: Optional[str] = None,
     conversation_history: Optional[Sequence[ConversationMessage]] = None,
+    conversation_state: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Public functional interface for querying the RAG pipeline.
 
@@ -842,6 +892,16 @@ def query_rag(
         Dict: {"answer": "...", "sources": [...], "confidence": 0.92, "language": "darija"}
     """
     engine = get_rag_engine()
+    if conversation_state is not None:
+        from app.services.conversation_state import ConversationState
+        state = ConversationState.model_validate(conversation_state)
+        conversation_history = [*(conversation_history or []), {
+            "role": "user",
+            "content": "Conversation state (user context, not proof of document validity): "
+                + state.model_dump_json()
+                + "\nDo not ask again for supplied information. Ask only for necessary missing details.",
+        }]
+        service_type = service_type or state.current_procedure_id
     return engine.query(
         user_query=user_query,
         service_type=service_type,

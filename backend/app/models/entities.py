@@ -106,6 +106,7 @@ class ChatMessage(Base):
     )
     # Groups messages into distinct conversations (single session for now).
     session_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    conversation_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     sender: Mapped[str] = mapped_column(String)
     message: Mapped[str] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String, default="darija")

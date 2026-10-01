@@ -5,7 +5,8 @@ import logging
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from app.services.vector_retrieval import RetrievedChunk
 
 from app.rag_service import query_rag
 from app.services.audio_service import (
@@ -35,6 +36,10 @@ class RAGQueryResponse(BaseModel):
     sources: List[str]
     language: str = "darija"
     fallback_reason: Optional[str] = None
+    chunks: list[RetrievedChunk] = Field(default_factory=list)
+    backend: str = "bm25"
+    threshold: float | None = None
+    candidate_count: int = 0
 
 
 # ── Voice models ───────────────────────────────────────────────────────────
@@ -79,7 +84,11 @@ def query_chat_rag(body: RAGQueryRequest) -> RAGQueryResponse:
         confidence=res.get("confidence", 0.0),
         sources=res.get("sources", []),
         language=res.get("language", "darija"),
-        fallback_reason=res.get("fallback_reason")
+        fallback_reason=res.get("fallback_reason"),
+        chunks=res.get("chunks", []),
+        backend=res.get("backend", "bm25"),
+        threshold=res.get("threshold"),
+        candidate_count=res.get("candidate_count", 0),
     )
 
 

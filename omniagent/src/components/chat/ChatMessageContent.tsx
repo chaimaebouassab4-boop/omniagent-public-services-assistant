@@ -49,7 +49,7 @@ export const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   // Assistant messages: render Rich Markdown with custom components
   return (
     <div
-      className={`chat-markdown-content text-xs sm:text-sm leading-relaxed break-words space-y-2 ${
+      className={`chat-markdown-content break-words text-sm leading-7 ${
         isRtl ? "text-right" : "text-left"
       }`}
       dir={isRtl ? "rtl" : "ltr"}
@@ -58,34 +58,34 @@ export const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => (
-            <h1 className="text-base font-bold text-foreground mt-3 mb-2 flex items-center gap-2 pb-1 border-b border-border/40">
+            <h1 className="mb-3 mt-4 flex items-center gap-2 border-b border-border/60 pb-2 text-base font-bold text-foreground">
               {children}
             </h1>
           ),
           h2: ({ children }) => (
-            <h2 className="text-sm font-bold text-foreground mt-3 mb-1.5 flex items-center gap-1.5">
+            <h2 className="mb-2 mt-4 flex items-center gap-1.5 text-sm font-bold text-foreground">
               {children}
             </h2>
           ),
           h3: ({ children }) => (
-            <h3 className="text-xs sm:text-sm font-semibold text-primary dark:text-primary-foreground mt-3 mb-1.5 pb-1 border-b border-border/40 flex items-center gap-1.5">
+            <h3 className="mb-2 mt-4 flex items-center gap-1.5 border-b border-border/40 pb-1 text-sm font-semibold text-[#17365d] dark:text-foreground">
               {children}
             </h3>
           ),
           h4: ({ children }) => (
-            <h4 className="text-xs font-semibold text-foreground mt-2 mb-1">{children}</h4>
+            <h4 className="mb-1.5 mt-3 text-sm font-semibold text-foreground">{children}</h4>
           ),
           p: ({ children }) => (
-            <p className="my-1.5 leading-relaxed text-card-foreground">{children}</p>
+            <p className="my-2 leading-7 text-card-foreground">{children}</p>
           ),
           ul: ({ children }) => (
-            <ul className="space-y-1.5 my-2 ps-4 list-disc marker:text-primary">{children}</ul>
+            <ul className="my-3 list-disc space-y-2 ps-5 marker:text-primary">{children}</ul>
           ),
           ol: ({ children }) => (
-            <ol className="space-y-1.5 my-2 ps-4 list-decimal marker:text-primary">{children}</ol>
+            <ol className="my-3 list-decimal space-y-2 ps-5 marker:font-semibold marker:text-primary">{children}</ol>
           ),
           li: ({ children }) => (
-            <li className="leading-relaxed ps-1 text-card-foreground">{children}</li>
+            <li className="ps-1 leading-7 text-card-foreground">{children}</li>
           ),
           strong: ({ children }) => (
             <strong className="font-semibold text-foreground">{children}</strong>

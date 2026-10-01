@@ -16,6 +16,7 @@ const PAGE_LABELS: Record<string, { fr: string; ar: string; color: string }> = {
   "/services": { fr: "Services", ar: "الخدمات", color: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400" },
   "/chat": { fr: "Assistant IA", ar: "المساعد الذكي", color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" },
   "/dashboard": { fr: "Mes dossiers", ar: "قضاياي", color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
+  "/help": { fr: "Aide", ar: "المساعدة", color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" },
   "/login": { fr: "Connexion", ar: "دخول", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
   "/signup": { fr: "Inscription", ar: "تسجيل", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
   "/admin": { fr: "Administration", ar: "لوحة الإدارة", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },

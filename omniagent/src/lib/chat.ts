@@ -11,6 +11,26 @@ export interface ChatMessage {
   confidence?: number;
   sources?: string[];
   fallbackReason?: string;
+  conversationState?: ConversationState | null;
+  chunks?: { content: string; metadata: Record<string, unknown>; similarity_score: number }[];
+}
+
+export interface ConversationState {
+  session_id: string;
+  current_procedure_id: string | null;
+  current_procedure_title: string | null;
+  user_type: string | null;
+  stage: "exploring" | "procedure_identified" | "collecting_info" | "ready";
+  last_user_intent: string | null;
+  mentioned_documents: string[];
+  special_case: string | null;
+  language: "fr" | "ar" | "darija";
+  turn_count: number;
+  last_updated: string;
+}
+
+export function getConversationState(sessionId: string): Promise<ConversationState> {
+  return chatFetch<ConversationState>(`/api/chat/sessions/${encodeURIComponent(sessionId)}/state`);
 }
 
 export interface ChatSession {

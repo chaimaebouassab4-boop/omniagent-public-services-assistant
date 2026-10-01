@@ -8,6 +8,8 @@ import { motion } from "framer-motion";
 import { Eye, EyeOff, ArrowRight, ArrowLeft, Bot, KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { login } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import { Landmark, BadgeCheck } from "lucide-react";
+
 import { apiUrl } from "@/lib/api-url";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
@@ -144,9 +146,14 @@ export default function Login() {
   const isFr = language === "fr";
 
   return (
-    <div className={`min-h-screen grid lg:grid-cols-2 ${isRtl ? "direction-rtl" : ""}`}>
+    <div className={`min-h-screen grid overflow-hidden lg:grid-cols-2 ${isRtl ? "direction-rtl" : ""}`}>
       {/* Left — Image panel */}
-      <div className="hidden lg:block relative overflow-hidden">
+      <motion.div
+        initial={{ opacity: 0.96, x: "100%" }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.65, ease: [0.25, 1, 0.5, 1] }}
+        className="relative hidden overflow-hidden lg:block"
+      >
         <img
           src="https://images.unsplash.com/photo-1539020140153-e479b8c22e70?q=85&w=1400&auto=format&fit=crop"
           alt="Rabat, Maroc"
@@ -162,24 +169,59 @@ export default function Login() {
             <span className="text-2xl font-bold text-white">OmniAgent</span>
           </Link>
           {/* Quote */}
-          <div>
-            <blockquote className="text-white text-xl font-light leading-relaxed mb-6" dir="rtl">
-              "المساعد الذكي للخدمات الإدارية المغربية — بالعربية والدارجة والفرنسية"
-            </blockquote>
-            <p className="text-white/70 text-sm">Votre assistant IA pour les démarches administratives marocaines</p>
-            <div className="flex gap-3 mt-6">
-              {["🇲🇦", "🔒", "⚡"].map((icon) => (
-                <span key={icon} className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center text-lg">
-                  {icon}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
+
+<div>
+  <blockquote
+    className="text-white text-xl font-light leading-relaxed mb-6"
+    dir="rtl"
+  >
+    "المساعد الذكي للخدمات الإدارية المغربية — بالعربية والدارجة والفرنسية"
+  </blockquote>
+
+  <p className="text-white/70 text-sm">
+    Votre assistant IA pour les démarches administratives marocaines
+  </p>
+
+  <div className="flex flex-wrap gap-3 mt-6">
+    {[
+      {
+        icon: Landmark,
+        label: "Services administratifs",
+      },
+      {
+        icon: ShieldCheck,
+        label: "Données sécurisées",
+      },
+      {
+        icon: BadgeCheck,
+        label: "Service fiable",
+      },
+    ].map(({ icon: Icon, label }) => (
+      <div
+        key={label}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 border border-white/10"
+      >
+        <Icon
+          className="w-4 h-4 text-white"
+          strokeWidth={1.8}
+        />
+        <span className="text-white/90 text-xs font-medium">
+          {label}
+        </span>
       </div>
+    ))}
+  </div>
+</div>
+        </div>
+      </motion.div>
 
       {/* Right — Form */}
-      <div className={`relative flex flex-col justify-center items-center px-6 py-16 bg-background ${isRtl ? "text-right" : "text-left"}`}>
+      <motion.div
+        initial={{ opacity: 0.96, x: "-100%" }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.65, ease: [0.25, 1, 0.5, 1] }}
+        className={`relative flex flex-col justify-center items-center px-6 py-16 bg-background ${isRtl ? "text-right" : "text-left"}`}
+      >
         {/* Top bar with ThemeToggle and Language Switcher */}
         <div className={`absolute top-4 ${isRtl ? "left-4" : "right-4"} flex items-center gap-2 z-10`}>
           <ThemeToggle />
@@ -293,7 +335,7 @@ export default function Login() {
             </Link>
           </p>
         </motion.div>
-      </div>
+      </motion.div>
 
       {/* ── Password Reset Dialog ── */}
       <Dialog open={resetOpen} onOpenChange={(open) => { if (!open) setResetOpen(false); }}>

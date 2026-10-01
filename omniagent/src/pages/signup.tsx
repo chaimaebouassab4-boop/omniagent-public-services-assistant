@@ -72,15 +72,20 @@ export default function Signup() {
   const getText = (key: keyof typeof t) => t[key][language] ?? t[key]["fr"];
 
   return (
-    <div className={`min-h-screen grid lg:grid-cols-2 ${isRtl ? "direction-rtl" : ""}`}>
-      {/* Left — Benefits panel */}
-      <div className="hidden lg:flex flex-col justify-between relative overflow-hidden">
+    <div className={`min-h-screen grid overflow-hidden lg:grid-cols-2 ${isRtl ? "direction-rtl" : ""}`}>
+      {/* Right — Moroccan image and benefits panel */}
+      <motion.div
+        initial={{ opacity: 0.96, x: "-100%" }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.65, ease: [0.25, 1, 0.5, 1] }}
+        className="relative order-2 hidden flex-col justify-between overflow-hidden lg:flex"
+      >
         <img
-          src="https://images.unsplash.com/photo-1499856871958-5b9357976b82?q=80&w=1400&auto=format&fit=crop"
-          alt="Médina marocaine"
+          src="https://images.unsplash.com/photo-1597212618440-806262de4f6b?q=88&w=1600&auto=format&fit=crop"
+          alt="Architecture traditionnelle de Marrakech, Maroc"
           className="absolute inset-0 w-full h-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-secondary/90 via-secondary/75 to-primary/80" />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/55 via-primary/40 to-amber-950/65" />
 
         <div className="relative z-10 flex flex-col h-full p-12 justify-between">
           {/* Logo */}
@@ -133,10 +138,15 @@ export default function Signup() {
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Right — Form */}
-      <div className={`relative flex flex-col justify-center items-center px-6 py-16 bg-background ${isRtl ? "text-right" : "text-left"}`}>
+      {/* Left — Form */}
+      <motion.div
+        initial={{ opacity: 0.96, x: "100%" }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.65, ease: [0.25, 1, 0.5, 1] }}
+        className={`relative order-1 flex flex-col justify-center items-center px-6 py-16 bg-background ${isRtl ? "text-right" : "text-left"}`}
+      >
         {/* Top bar with ThemeToggle and Language Switcher */}
         <div className={`absolute top-4 ${isRtl ? "left-4" : "right-4"} flex items-center gap-2 z-10`}>
           <ThemeToggle />
@@ -294,7 +304,7 @@ export default function Signup() {
             </Link>
           </p>
         </motion.div>
-      </div>
+      </motion.div>
     </div>
   );
 }
