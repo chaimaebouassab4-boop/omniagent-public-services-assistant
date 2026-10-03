@@ -1,0 +1,149 @@
+/* Homepage-only tokens: other screens keep their existing theme. */
+.omni-home-theme {
+  --background: 34 60% 97%;
+  --foreground: 225 19% 12%;
+  --card: 36 60% 99%;
+  --card-foreground: 225 19% 12%;
+  --border: 28 29% 85%;
+  --input: 28 29% 78%;
+  --primary: 18 80% 42%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 215 62% 32%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 33 38% 92%;
+  --muted-foreground: 218 19% 36%;
+  --ring: 18 80% 42%;
+  --home-blue-surface: 214 42% 95%;
+  --home-cream-surface: 30 62% 95%;
+  --home-shadow: 0 3px 7px hsl(218 40% 16% / .025), 0 16px 36px -24px hsl(218 40% 16% / .23);
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+}
+
+.dark .omni-home-theme {
+  --background: 225 25% 10%;
+  --foreground: 34 50% 96%;
+  --card: 222 28% 14%;
+  --card-foreground: 34 50% 96%;
+  --border: 218 23% 26%;
+  --input: 218 23% 34%;
+  --primary: 23 90% 69%;
+  --primary-foreground: 225 30% 10%;
+  --secondary: 211 81% 76%;
+  --secondary-foreground: 221 39% 12%;
+  --muted: 220 24% 18%;
+  --muted-foreground: 215 24% 77%;
+  --ring: 23 90% 69%;
+  --home-blue-surface: 221 30% 12%;
+  --home-cream-surface: 24 13% 12%;
+}
+
+.omni-home-theme > header {
+  background-color: hsl(var(--card) / .96);
+  border-bottom-color: hsl(var(--primary) / .18);
+  box-shadow: 0 3px 18px hsl(215 40% 20% / .045);
+}
+
+.omni-home-theme > header nav a:hover {
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / .07);
+}
+
+.home-hero-wash {
+  background: linear-gradient(90deg, hsl(var(--background)) 5%, hsl(var(--background) / .94) 40%, hsl(var(--background) / .5) 72%, hsl(var(--secondary) / .16));
+}
+
+[dir="rtl"] .home-hero-wash {
+  background: linear-gradient(270deg, hsl(var(--background)) 5%, hsl(var(--background) / .94) 40%, hsl(var(--background) / .5) 72%, hsl(var(--secondary) / .16));
+}
+
+.omni-home-theme .home-section {
+  background-color: hsl(var(--background));
+  background-image: radial-gradient(ellipse at 100% 0%, hsl(var(--primary) / .055), transparent 50%);
+}
+
+.omni-home-theme .home-section-tinted {
+  background-color: hsl(var(--home-cream-surface));
+}
+
+.omni-home-theme :is(#situations, #trouver-un-service) {
+  background-color: hsl(var(--home-blue-surface));
+  background-image: radial-gradient(ellipse at 0% 100%, hsl(var(--secondary) / .055), transparent 65%);
+}
+
+.home-section-heading::before {
+  content: "";
+  display: block;
+  width: 2.25rem;
+  height: 3px;
+  margin-block-end: 1rem;
+  border-radius: 2px;
+  background-color: hsl(var(--primary));
+}
+
+.omni-home-theme .home-card {
+  box-shadow: var(--home-shadow);
+  transition: border-color 240ms ease, background-color 240ms ease, box-shadow 240ms ease, transform 240ms ease;
+}
+
+.home-icon {
+  border: 1px solid hsl(var(--secondary) / .13);
+  background: hsl(var(--secondary) / .065);
+}
+
+.omni-home-theme .home-preparation {
+  --foreground: 34 50% 96%;
+  --muted-foreground: 215 30% 81%;
+  --secondary: 211 78% 78%;
+  --secondary-foreground: 220 40% 12%;
+  --card: 216 40% 21%;
+  --card-foreground: 34 50% 96%;
+  --border: 215 30% 33%;
+  background: radial-gradient(ellipse at 95% 10%, hsl(215 65% 35% / .6), transparent 65%), hsl(218 49% 16%);
+  color: hsl(var(--foreground));
+}
+
+.home-preparation-card {
+  box-shadow: 0 20px 45px -20px hsl(220 60% 5% / .5);
+}
+
+.omni-home-theme #vos-donnees {
+  --foreground: 34 50% 96%;
+  --muted-foreground: 215 22% 80%;
+  --secondary: 211 80% 77%;
+  --primary: 23 90% 72%;
+  background: radial-gradient(ellipse at 0% 0%, hsl(213 62% 27% / .45), transparent 65%), hsl(225 23% 12%);
+  color: hsl(var(--foreground));
+  border-block: 1px solid hsl(215 24% 27%);
+}
+
+.omni-home-theme #vos-donnees > div > a {
+  color: hsl(var(--primary));
+}
+
+.omni-home-theme footer {
+  background-color: hsl(var(--home-blue-surface));
+}
+
+.omni-home-theme footer a:hover {
+  color: hsl(var(--primary));
+}
+
+.omni-home-theme .omni-journey {
+  --journey-accent: hsl(var(--primary));
+  --journey-surface: hsl(var(--home-cream-surface));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .omni-home-theme .home-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px -10px hsl(var(--primary) / .16);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omni-home-theme .home-card {
+    transition: none;
+    transform: none !important;
+  }
+}

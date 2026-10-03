@@ -6,6 +6,7 @@ import { HomeSections } from "@/components/home/HomeSections";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
 import { ArrowRight, ArrowLeft, Bot, MapPin, ShieldCheck, Globe } from "lucide-react";
+import "@/components/home/HomeTheme.css";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -17,9 +18,9 @@ export default function Home() {
   const Arrow = isRtl ? ArrowLeft : ArrowRight;
 
   return (
-    <AppLayout fullBleed>
+    <AppLayout fullBleed className="omni-home-theme">
       {/* ── HERO ──────────────────────────────────────────────── */}
-      <section className="relative flex min-h-[calc(100svh-4rem)] items-center overflow-hidden">
+      <section className="home-hero relative flex min-h-[calc(100svh-4rem)] items-center overflow-hidden">
         {/* Background image — Hassan II Mosque Casablanca */}
         <div className="absolute inset-0">
           <img
@@ -27,7 +28,7 @@ export default function Home() {
             alt="Mosquée Hassan II, Casablanca"
             className="w-full h-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-background/20 dark:from-background dark:via-background/90 dark:to-background/40" />
+          <div className="home-hero-wash absolute inset-0" />
           <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
         </div>
 
@@ -81,7 +82,7 @@ export default function Home() {
                 <Arrow className="w-4 h-4" />
               </Link>
             </Button>
-            <Button size="lg" variant="outline" asChild className="h-12 w-full gap-2 px-6 text-base sm:w-auto sm:px-8">
+            <Button size="lg" variant="secondary" asChild className="h-12 w-full gap-2 px-6 text-base shadow-md sm:w-auto sm:px-8">
               <Link href="/chat">
                 <Bot className="w-4 h-4" />
                 {language === "fr" ? "Parler à l'IA" : language === "ar" ? "تحدث إلى المساعد الذكي" : "هضر مع المساعد الذكي"}

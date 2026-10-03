@@ -1,13 +1,18 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { homeTranslations } from "./home-translations";
 
 export type Language = "ar" | "fr" | "darija";
 
 type Translations = Record<string, Record<Language, string>>;
+type TranslationValues = Record<string, string | number>;
+const LOCALES: Record<Language, string> = { fr: "fr-MA", ar: "ar-MA", darija: "ar-MA" };
 
 export const translations: Translations = {
+  ...homeTranslations,
   "app.title": { ar: "أومني إيجنت", fr: "OmniAgent", darija: "أومني إيجنت" },
   "app.tagline": { ar: "مساعدك الذكي للخدمات الإدارية", fr: "Votre assistant IA pour les services publics", darija: "المساعد ديالك للخدمات الإدارية" },
   "nav.home": { ar: "الرئيسية", fr: "Accueil", darija: "الرئيسية" },
+  "nav.help": { ar: "المساعدة", fr: "Aide", darija: "المساعدة" },
   "nav.services": { ar: "الخدمات", fr: "Services", darija: "الخدمات" },
   "nav.dashboard": { ar: "ملفاتي", fr: "Mes dossiers", darija: "ملفاتي" },
   "nav.history": { ar: "تتبع الطلبات", fr: "Historique et suivi", darija: "تتبع الطلبات" },
@@ -43,7 +48,7 @@ export const translations: Translations = {
 interface I18nContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: (key: string) => string;
+  t: (key: string, values?: TranslationValues) => string;
   isRtl: boolean;
 }
 
@@ -68,14 +73,22 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.dir = isRtl ? "rtl" : "ltr";
-    document.documentElement.lang = language;
+    document.documentElement.lang = language === "darija" ? "ar-MA" : language;
   }, [language, isRtl]);
 
-  const t = (key: string): string => {
-    if (!translations[key]) {
-      return key;
+  const t = (key: string, values: TranslationValues = {}): string => {
+    let resolvedKey = key;
+    if (typeof values.count === "number") {
+      const plural = values.count === 0 ? "zero" : new Intl.PluralRules(LOCALES[language]).select(values.count);
+      if (translations[`${key}.${plural}`]) resolvedKey = `${key}.${plural}`;
+      else if (translations[`${key}.other`]) resolvedKey = `${key}.other`;
     }
-    return translations[key][language];
+    const text = translations[resolvedKey]?.[language] ?? translations[resolvedKey]?.fr ?? key;
+    return text.replace(/\{(\w+)\}/g, (placeholder, name: string) => {
+      const value = values[name];
+      if (value === undefined) return placeholder;
+      return typeof value === "number" ? new Intl.NumberFormat(LOCALES[language]).format(value) : value;
+    });
   };
 
   return (

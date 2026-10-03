@@ -14,6 +14,7 @@ type AppLayoutProps = {
   children: ReactNode;
   fullHeight?: boolean;
   fullBleed?: boolean;
+  className?: string;
 };
 
 function getInitialSidebarState(): boolean {
@@ -24,7 +25,7 @@ function getInitialSidebarState(): boolean {
   return window.matchMedia("(max-width: 1023px)").matches;
 }
 
-export function AppLayout({ children, fullHeight = false, fullBleed = false }: AppLayoutProps) {
+export function AppLayout({ children, fullHeight = false, fullBleed = false, className = "" }: AppLayoutProps) {
   const { t, language, isRtl } = useI18n();
   const [location] = useLocation();
   const [collapsed, setCollapsed] = useState(getInitialSidebarState);
@@ -64,7 +65,7 @@ export function AppLayout({ children, fullHeight = false, fullBleed = false }: A
   };
 
   return (
-    <div className={`w-full bg-background ${fullHeight ? "h-dvh overflow-hidden" : "min-h-dvh"}`} dir={isRtl ? "rtl" : "ltr"}>
+    <div className={`w-full bg-background ${fullHeight ? "h-dvh overflow-hidden" : "min-h-dvh"} ${className}`} dir={isRtl ? "rtl" : "ltr"}>
       <Header
         navigation={navigation}
         currentUser={currentUser}

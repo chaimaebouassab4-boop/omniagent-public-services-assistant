@@ -118,7 +118,7 @@ const getDocumentLabel = (reqKey: string, lang: string) => {
 
 /* ─── Component ───────────────────────────────────────────────── */
 export default function Services() {
-  const { language, isRtl } = useI18n();
+  const { language, isRtl, t } = useI18n();
   const { data: services, isLoading } = useListServices();
   const queryString = useSearch();
   const params = useMemo(() => new URLSearchParams(queryString), [queryString]);
@@ -304,7 +304,7 @@ export default function Services() {
         </div>
 
         {/* ── Category Filters ────────────────────────────────── */}
-        {lifeEvent && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 text-sm"><p>{lifeEvent.title}</p><Button variant="outline" size="sm" onClick={() => setLocation("/services")}>{language === "fr" ? "Voir toutes les démarches" : "عرض جميع الإجراءات"}</Button></div>}
+        {lifeEvent && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 text-sm"><p>{t(`home.life.${lifeEvent.id}`)}</p><Button variant="outline" size="sm" onClick={() => setLocation("/services")}>{t("home.popular.all")}</Button></div>}
         <div className={`flex items-center gap-1 overflow-x-auto pb-1 ${isRtl ? "flex-row-reverse" : ""}`}>
           {(Object.keys(CATEGORIES) as CategoryKey[]).map((key) => (
             <button
