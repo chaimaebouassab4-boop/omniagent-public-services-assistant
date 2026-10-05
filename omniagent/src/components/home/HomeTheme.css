@@ -92,27 +92,38 @@
 }
 
 .omni-home-theme .home-preparation {
-  --foreground: 34 50% 96%;
-  --muted-foreground: 215 30% 81%;
-  --secondary: 211 78% 78%;
+  --foreground: 0 0% 100%;
+  --muted: 217 33% 22%;
+  --muted-foreground: 215 25% 82%;
+  --secondary: 211 90% 82%;
   --secondary-foreground: 220 40% 12%;
-  --card: 216 40% 21%;
-  --card-foreground: 34 50% 96%;
-  --border: 215 30% 33%;
-  background: radial-gradient(ellipse at 95% 10%, hsl(215 65% 35% / .6), transparent 65%), hsl(218 49% 16%);
+  --card: 217 40% 17%;
+  --card-foreground: 0 0% 100%;
+  --border: 215 28% 28%;
+  --primary: 23 90% 62%;
+  --primary-foreground: 0 0% 100%;
+  background: radial-gradient(ellipse at 95% 10%, hsl(215 65% 30% / .7), transparent 65%), hsl(220 45% 13%);
   color: hsl(var(--foreground));
 }
 
 .home-preparation-card {
-  box-shadow: 0 20px 45px -20px hsl(220 60% 5% / .5);
+  background-color: hsl(217 42% 16% / .95);
+  border-color: hsl(215 30% 28%);
+  box-shadow: 0 20px 45px -15px hsl(220 60% 5% / .6);
 }
 
 .omni-home-theme #vos-donnees {
-  --foreground: 34 50% 96%;
-  --muted-foreground: 215 22% 80%;
-  --secondary: 211 80% 77%;
+  --foreground: 0 0% 100%;
+  --muted: 225 23% 18%;
+  --muted-foreground: 215 22% 82%;
+  --secondary: 211 85% 80%;
+  --secondary-foreground: 220 40% 12%;
+  --card: 225 25% 16%;
+  --card-foreground: 0 0% 100%;
+  --border: 215 24% 28%;
   --primary: 23 90% 72%;
-  background: radial-gradient(ellipse at 0% 0%, hsl(213 62% 27% / .45), transparent 65%), hsl(225 23% 12%);
+  --primary-foreground: 225 30% 10%;
+  background: radial-gradient(ellipse at 0% 0%, hsl(213 62% 27% / .55), transparent 65%), hsl(225 23% 12%);
   color: hsl(var(--foreground));
   border-block: 1px solid hsl(215 24% 27%);
 }

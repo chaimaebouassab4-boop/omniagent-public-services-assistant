@@ -1,6 +1,22 @@
 import { useState } from "react";
 import * as AccordionPrimitive from "@radix-ui/react-accordion";
-import { ArrowUpRight, Compass, Copy, FolderOpen, Route, ScanLine, Send } from "lucide-react";
+import {
+  ArrowUpRight,
+  Compass,
+  Copy,
+  FolderOpen,
+  Route,
+  ScanLine,
+  Send,
+  CheckCircle2,
+  Clock,
+  Landmark,
+  Lock,
+  ShieldCheck,
+  Sparkles,
+  MapPin,
+  Bell,
+} from "lucide-react";
 import { Link } from "wouter";
 import { Accordion, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { isAuthenticated } from "@/lib/auth";
@@ -17,8 +33,65 @@ const steps = [
   { id: "suivre", icon: Route, href: "/history", requiresAuth: true },
 ];
 
+const STEP_VISUALS: Record<
+  string,
+  {
+    badge: { fr: string; ar: string; darija: string };
+    pills: Array<{ icon: any; fr: string; ar: string; darija: string }>;
+  }
+> = {
+  comprendre: {
+    badge: { fr: "Synthèse Administrative", ar: "الدليل الإداري الموحد", darija: "الدليل الإداري" },
+    pills: [
+      { icon: Clock, fr: "Délais moyens vérifiés", ar: "الآجال القانونية محددة", darija: "الآجال محددة" },
+      { icon: Landmark, fr: "Compétence territoriale", ar: "الإدارة المختصة موضحة", darija: "المقاطعة المحددة" },
+      { icon: CheckCircle2, fr: "Frais officiels sans surprise", ar: "الرسوم الرسمية واضحة", darija: "المصاريف الرسمية باينة" },
+    ],
+  },
+  preparer: {
+    badge: { fr: "Checklist Personnalisée", ar: "لائحة الوثائق المخصصة", darija: "لائحة الوثائق" },
+    pills: [
+      { icon: CheckCircle2, fr: "Pièce d'identité (CIN)", ar: "بطاقة التعريف الوطنية", darija: "لاكارط ناسيونال" },
+      { icon: CheckCircle2, fr: "Justificatif de domicile", ar: "إثبات السكنى", darija: "شهادة السكنى" },
+      { icon: CheckCircle2, fr: "Photos réglementaires", ar: "صور مطابقة للمواصفات", darija: "تصاور رسميين" },
+    ],
+  },
+  reutiliser: {
+    badge: { fr: "Coffre-fort Sécurisé", ar: "خزانة رقمية آمنة", darija: "فضاء آمن للوثائق" },
+    pills: [
+      { icon: Lock, fr: "Chiffrement AES-256", ar: "تشفير عالي الأمان", darija: "حماية مشددة" },
+      { icon: Copy, fr: "0 saisie répétée", ar: "بدون تكرار إدخال البيانات", darija: "بلا ما تعاود تكتب" },
+      { icon: ShieldCheck, fr: "Confidentialité totale", ar: "سرية تامة للمعطيات", darija: "سرية تامة" },
+    ],
+  },
+  verifier: {
+    badge: { fr: "Contrôle Qualité IA", ar: "فحص الجودة بالذكاء الاصطناعي", darija: "مراقبة ذكية" },
+    pills: [
+      { icon: Sparkles, fr: "Lisibilité des scans", ar: "فحص وضوح النسخ", darija: "وضوح الوثائق" },
+      { icon: CheckCircle2, fr: "Vérification des dates", ar: "التأكد من تواريخ الصلاحية", darija: "تأكيد الصلاحية" },
+      { icon: ShieldCheck, fr: "0 dossier rejeté", ar: "تقليص مخاطر الرفض", darija: "تفادي الرفض" },
+    ],
+  },
+  agir: {
+    badge: { fr: "Orientation & Dépôt", ar: "التوجيه ونقط الإيداع", darija: "التوجيه والمقاطعة" },
+    pills: [
+      { icon: MapPin, fr: "Annexe / Guichet identifié", ar: "تحديد الملحقة الإدارية", darija: "المقاطعة المحددة" },
+      { icon: Clock, fr: "Créneaux recommandés", ar: "مواقيت الاستقبال الموصى بها", darija: "أوقات الخدمة" },
+      { icon: Send, fr: "Bordereau prêt à déposer", ar: "ملف منظم وجاهز للإيداع", darija: "ملف واجد" },
+    ],
+  },
+  suivre: {
+    badge: { fr: "Tableau de Bord & Alertes", ar: "تتبع الإجراء والإشعارات", darija: "التتبع والإشعارات" },
+    pills: [
+      { icon: Route, fr: "Progression en direct", ar: "متابعة تقدم المعالجة", darija: "تتبع مباشر" },
+      { icon: Bell, fr: "Rappels et notifications", ar: "تنبيهات عند كل مستجد", darija: "تنبيهات فورية" },
+      { icon: CheckCircle2, fr: "Historique archivé", ar: "أرشيف كامل لطلباتك", darija: "أرشيف كامل" },
+    ],
+  },
+};
+
 export function OmniAgentJourney() {
-  const { t, isRtl } = useI18n();
+  const { t, language, isRtl } = useI18n();
   const [activeStep, setActiveStep] = useState(steps[0].id);
   const activeIndex = steps.findIndex((step) => step.id === activeStep);
 
@@ -55,6 +128,7 @@ export function OmniAgentJourney() {
           {steps.map((step, index) => {
             const href = step.requiresAuth && !isAuthenticated() ? `/login?returnTo=${encodeURIComponent(step.href)}` : step.href;
             const Action = step.href.includes("#") ? "a" : Link;
+            const visual = STEP_VISUALS[step.id];
 
             return (
               <AccordionItem key={step.id} value={step.id} className="omni-journey-item group/step relative overflow-hidden rounded-xl border border-border shadow-sm">
@@ -75,7 +149,35 @@ export function OmniAgentJourney() {
                   <div className="px-3.5 pb-4 sm:ps-[5.25rem] sm:pe-5 sm:pb-5">
                     <div className="border-t border-border/70 pt-3 sm:pt-4">
                       <p className="max-w-lg text-xs sm:text-sm leading-relaxed text-muted-foreground">{t(`home.journey.${step.id}.description`)}</p>
-                      <Action href={href} className="mt-2.5 sm:mt-3 inline-flex min-h-11 max-w-full items-center gap-2 rounded-md text-xs sm:text-sm font-semibold omni-journey-accent underline decoration-primary/35 underline-offset-4 transition-colors hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+
+                      {/* Visual Step Preview Card */}
+                      {visual && (
+                        <div className="mt-3.5 rounded-xl border border-primary/20 bg-card/90 p-3 sm:p-3.5 shadow-xs">
+                          <div className="mb-2.5 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-primary">
+                              <Sparkles className="size-3.5" />
+                              {visual.badge[language === "ar" ? "ar" : language === "darija" ? "darija" : "fr"]}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-mono">OmniAgent Maroc</span>
+                          </div>
+
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            {visual.pills.map((pill, pIndex) => (
+                              <div
+                                key={pIndex}
+                                className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-2.5 py-1.5 text-xs text-foreground"
+                              >
+                                <pill.icon className="size-3.5 shrink-0 text-secondary" />
+                                <span className="truncate text-[11px] font-medium">
+                                  {pill[language === "ar" ? "ar" : language === "darija" ? "darija" : "fr"]}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <Action href={href} className="mt-3 inline-flex min-h-11 max-w-full items-center gap-2 rounded-md text-xs sm:text-sm font-semibold omni-journey-accent underline decoration-primary/35 underline-offset-4 transition-colors hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                         {t(`home.journey.${step.id}.action`)}<ArrowUpRight aria-hidden="true" className="h-4 w-4 shrink-0 text-primary rtl:-rotate-90" />
                       </Action>
                     </div>
