@@ -282,7 +282,7 @@ export default function Services() {
         {/* ── Page Header ─────────────────────────────────────── */}
         <div className={`flex flex-col md:flex-row items-start md:items-end justify-between gap-4 ${isRtl ? "md:flex-row-reverse" : ""}`}>
           <div className="space-y-1.5">
-            <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-semibold text-foreground tracking-tight">
               {language === "fr" ? "Catalogue des services" : "فهرس الخدمات"}
             </h1>
             <p className="text-sm text-muted-foreground max-w-lg">
@@ -305,12 +305,12 @@ export default function Services() {
 
         {/* ── Category Filters ────────────────────────────────── */}
         {lifeEvent && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 text-sm"><p>{t(`home.life.${lifeEvent.id}`)}</p><Button variant="outline" size="sm" onClick={() => setLocation("/services")}>{t("home.popular.all")}</Button></div>}
-        <div className={`flex items-center gap-1 overflow-x-auto pb-1 ${isRtl ? "flex-row-reverse" : ""}`}>
+        <div className={`flex items-center gap-1 overflow-x-auto max-w-full pb-1 scrollbar-none ${isRtl ? "flex-row-reverse" : ""}`}>
           {(Object.keys(CATEGORIES) as CategoryKey[]).map((key) => (
             <button
               key={key}
               onClick={() => setActiveCategory(key)}
-              className={`px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+              className={`px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
                 activeCategory === key
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -325,7 +325,7 @@ export default function Services() {
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="rounded-xl border border-border bg-card p-5 space-y-3">
+              <div key={i} className="rounded-xl border border-border bg-card p-4 sm:p-5 space-y-3">
                 <div className="flex items-center gap-3">
                   <Skeleton className="h-10 w-10 rounded-lg" />
                   <div className="flex-1 space-y-2">
@@ -357,7 +357,7 @@ export default function Services() {
                   transition={{ delay: i * 0.04 }}
                   className="group flex flex-col rounded-xl border border-border bg-card overflow-hidden hover:shadow-md hover:border-primary/40 transition-all duration-200"
                 >
-                  <div className="flex flex-col flex-1 p-5 gap-4">
+                  <div className="flex flex-col flex-1 p-4 sm:p-5 gap-3 sm:gap-4">
                     {/* Icon + Status row */}
                     <div className="flex items-start justify-between">
                       <div className={`w-10 h-10 rounded-lg ${iconInfo.bg} flex items-center justify-center`}>
@@ -478,11 +478,11 @@ export default function Services() {
                 className="relative z-10 w-full sm:max-w-xl max-w-full h-full bg-background shadow-2xl overflow-y-auto flex flex-col border-x border-border"
               >
                 {/* Header with icon (no image) */}
-                <div className={`relative p-6 pb-5 ${iconInfo.bg}`}>
+                <div className={`relative p-4 pb-4 sm:p-6 sm:pb-5 ${iconInfo.bg}`}>
                   <button
                     onClick={() => setDetailService(null)}
                     aria-label="Close"
-                    className={`absolute top-4 ${isRtl ? "left-4" : "right-4"} w-8 h-8 bg-black/10 hover:bg-black/20 rounded-full flex items-center justify-center text-foreground transition-colors`}
+                    className={`absolute top-3 sm:top-4 ${isRtl ? "left-3 sm:left-4" : "right-3 sm:right-4"} w-8 h-8 bg-black/10 hover:bg-black/20 rounded-full flex items-center justify-center text-foreground transition-colors`}
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -500,11 +500,11 @@ export default function Services() {
                       {detailService.processingDays} {language === "fr" ? "jours" : "أيام"}
                     </span>
                   </div>
-                  <h2 className="font-semibold text-xl text-foreground leading-tight">{getName(detailService)}</h2>
+                  <h2 className="font-semibold text-lg sm:text-xl text-foreground leading-tight">{getName(detailService)}</h2>
                   <p className="text-xs text-muted-foreground mt-0.5">{language === "fr" ? detailService.nameAr : detailService.nameFr}</p>
                 </div>
 
-                <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+                <div className="p-4 space-y-4 sm:p-6 sm:space-y-6 flex-1 overflow-y-auto">
                   {/* Description */}
                   <p className="text-muted-foreground text-sm leading-relaxed">
                     {language === "fr" ? m.descLongFr : m.descLongAr}
@@ -593,12 +593,12 @@ export default function Services() {
                 </div>
 
                 {/* Sticky CTA Bottom */}
-                <div className="p-4 border-t border-border bg-background/95 backdrop-blur-sm sticky bottom-0 z-20 flex gap-3">
-                  <Button variant="outline" className="flex-1" onClick={() => setDetailService(null)}>
+                <div className="p-3 sm:p-4 border-t border-border bg-background/95 backdrop-blur-sm sticky bottom-0 z-20 flex flex-col sm:flex-row gap-2 sm:gap-3">
+                  <Button variant="outline" className="w-full sm:flex-1" onClick={() => setDetailService(null)}>
                     {language === "fr" ? "Fermer" : "إغلاق"}
                   </Button>
                   <Button
-                    className="flex-1 gap-2 font-medium bg-primary hover:bg-primary/90 text-primary-foreground"
+                    className="w-full sm:flex-1 gap-2 font-medium bg-primary hover:bg-primary/90 text-primary-foreground"
                     onClick={() => {
                       if (!isAuthenticated()) {
                         setLocation(`/login?returnTo=${encodeURIComponent(`/services?service=${detailService.id}`)}`);
@@ -620,8 +620,8 @@ export default function Services() {
 
       {/* ── REQUEST DIALOG ────────────────────────────────────── */}
       <Dialog open={selectedService !== null} onOpenChange={(open) => !open && setSelectedService(null)}>
-        <DialogContent className="sm:max-w-[480px] max-h-[85vh] flex flex-col p-0 overflow-hidden" dir={isRtl ? "rtl" : "ltr"}>
-          <DialogHeader className="p-5 pb-3 border-b border-border shrink-0">
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-[480px] max-h-[90vh] sm:max-h-[85vh] flex flex-col p-0 overflow-hidden" dir={isRtl ? "rtl" : "ltr"}>
+          <DialogHeader className="p-4 pb-3 sm:p-5 sm:pb-3 border-b border-border shrink-0">
             <DialogTitle className="flex items-center gap-2.5 text-base">
               {selectedService && (() => {
                 const iconInfo = getIcon(selectedService.id);
@@ -644,9 +644,9 @@ export default function Services() {
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit((values) => onSubmit(values, true))} className="flex flex-col flex-1 overflow-hidden">
-              <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div className="p-4 space-y-3.5 sm:p-5 sm:space-y-4 overflow-y-auto flex-1">
                 {/* Feature 2: Smart OCR Auto-fill Button */}
-                <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex items-center justify-between gap-3">
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
                       <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
@@ -674,7 +674,7 @@ export default function Services() {
                     variant="outline"
                     disabled={isScanningCin}
                     onClick={() => cinInputRef.current?.click()}
-                    className="shrink-0 text-xs gap-1.5 h-8 border-primary/30 hover:bg-primary/10 text-primary font-medium"
+                    className="shrink-0 text-xs gap-1.5 h-8 border-primary/30 hover:bg-primary/10 text-primary font-medium w-full sm:w-auto justify-center"
                   >
                     {isScanningCin ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -764,15 +764,15 @@ export default function Services() {
                 />
               </div>
 
-              <DialogFooter className="p-4 border-t border-border bg-muted/20 flex flex-row items-center justify-end gap-2 shrink-0">
-                <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedService(null)}>
+              <DialogFooter className="p-3 sm:p-4 border-t border-border bg-muted/20 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 shrink-0">
+                <Button type="button" variant="outline" size="sm" className="h-8 text-xs w-full sm:w-auto" onClick={() => setSelectedService(null)}>
                   {language === "fr" ? "Annuler" : "إلغاء"}
                 </Button>
                 <Button
                   type="button"
                   variant="secondary"
                   size="sm"
-                  className="h-8 text-xs"
+                  className="h-8 text-xs w-full sm:w-auto"
                   disabled={createCase.isPending}
                   onClick={form.handleSubmit((values) => onSubmit(values, false))}
                 >
@@ -781,7 +781,7 @@ export default function Services() {
                 <Button
                   type="submit"
                   size="sm"
-                  className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+                  className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-medium w-full sm:w-auto"
                   disabled={createCase.isPending}
                 >
                   {createCase.isPending

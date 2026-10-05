@@ -39,19 +39,19 @@ export default function Dashboard() {
 
   return (
     <AppLayout>
-      <div className="max-w-6xl mx-auto space-y-8">
+      <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">{t("nav.dashboard")}</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">{t("nav.dashboard")}</h1>
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[...Array(4)].map((_, i) => (
               <Card key={i}><CardHeader><Skeleton className="h-4 w-1/2" /></CardHeader><CardContent><Skeleton className="h-8 w-1/4" /></CardContent></Card>
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">{t("dashboard.active")}</CardTitle>
@@ -91,11 +91,11 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="mt-12">
-          <h2 className="text-xl font-bold mb-4">{language === "fr" ? "Dossiers Récents" : "القضايا الأخيرة"}</h2>
+        <div className="mt-8 sm:mt-12">
+          <h2 className="text-lg sm:text-xl font-bold mb-3 sm:mb-4">{language === "fr" ? "Dossiers Récents" : "القضايا الأخيرة"}</h2>
           
           {isLoading ? (
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {[...Array(3)].map((_, i) => (
                 <Skeleton key={i} className="h-20 w-full" />
               ))}
@@ -105,25 +105,25 @@ export default function Dashboard() {
               {summary?.recentCases?.length ? (
                 <div className="divide-y divide-border">
                   {summary.recentCases.map((caseItem) => (
-                    <div key={caseItem.id} className="p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
-                          <FileText className="w-5 h-5 text-primary" />
+                    <div key={caseItem.id} className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 hover:bg-muted/50 transition-colors">
+                      <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                        <div className="w-9 h-9 sm:w-10 sm:h-10 bg-primary/10 rounded-full flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                          <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                         </div>
-                        <div>
-                          <div className="font-semibold">{language === "fr" ? caseItem.service?.nameFr : caseItem.service?.nameAr}</div>
-                          <div className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-sm sm:text-base text-foreground leading-snug">{language === "fr" ? caseItem.service?.nameFr : caseItem.service?.nameAr}</div>
+                          <div className="text-xs sm:text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                             <span>Ref: {caseItem.referenceNumber}</span>
                             <span>•</span>
                             <span>{new Date(caseItem.submittedAt).toLocaleDateString(language === "fr" ? "fr-FR" : "ar-MA")}</span>
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t border-border/50 sm:border-t-0">
                         <StatusBadge status={caseItem.status} />
-                        <Button variant="ghost" size="icon" asChild>
+                        <Button variant="ghost" size="sm" className="h-8 px-2 sm:h-9 sm:w-9 sm:px-0" asChild>
                           <Link href={`/cases/${caseItem.id}`}>
-                            <Arrow className="w-5 h-5 text-muted-foreground" />
+                            <Arrow className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />
                           </Link>
                         </Button>
                       </div>

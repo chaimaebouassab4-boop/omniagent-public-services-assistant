@@ -65,7 +65,7 @@ export function AppLayout({ children, fullHeight = false, fullBleed = false, cla
   };
 
   return (
-    <div className={`w-full bg-background ${fullHeight ? "h-dvh overflow-hidden" : "min-h-dvh"} ${className}`} dir={isRtl ? "rtl" : "ltr"}>
+    <div className={`w-full max-w-full overflow-x-hidden bg-background ${fullHeight ? "h-dvh overflow-hidden" : "min-h-dvh"} ${className}`} dir={isRtl ? "rtl" : "ltr"}>
       <Header
         navigation={navigation}
         currentUser={currentUser}
@@ -91,8 +91,8 @@ export function AppLayout({ children, fullHeight = false, fullBleed = false, cla
             fullHeight
               ? "flex h-full min-h-0 flex-col overflow-hidden p-2 sm:p-3 lg:p-4"
               : fullBleed
-              ? "w-full"
-              : "mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8"
+              ? "w-full max-w-full overflow-x-hidden"
+              : "mx-auto w-full max-w-[1600px] px-3.5 py-4 sm:p-6 lg:p-8"
           }>
             {children}
           </div>

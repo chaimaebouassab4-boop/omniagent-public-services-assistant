@@ -72,7 +72,7 @@ export default function Signup() {
   const getText = (key: keyof typeof t) => t[key][language] ?? t[key]["fr"];
 
   return (
-    <div className={`min-h-screen grid overflow-hidden lg:grid-cols-2 ${isRtl ? "direction-rtl" : ""}`}>
+    <div className={`min-h-screen grid overflow-x-hidden overflow-y-auto lg:grid-cols-2 ${isRtl ? "direction-rtl" : ""}`}>
       {/* Right — Moroccan image and benefits panel */}
       <motion.div
         initial={{ opacity: 0.96, x: "-100%" }}
@@ -145,10 +145,10 @@ export default function Signup() {
         initial={{ opacity: 0.96, x: "100%" }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.65, ease: [0.25, 1, 0.5, 1] }}
-        className={`relative order-1 flex flex-col justify-center items-center px-6 py-16 bg-background ${isRtl ? "text-right" : "text-left"}`}
+        className={`relative order-1 flex flex-col justify-center items-center px-4 py-12 sm:px-6 sm:py-16 min-h-screen lg:min-h-0 bg-background ${isRtl ? "text-right" : "text-left"}`}
       >
         {/* Top bar with ThemeToggle and Language Switcher */}
-        <div className={`absolute top-4 ${isRtl ? "left-4" : "right-4"} flex items-center gap-2 z-10`}>
+        <div className={`absolute top-3 sm:top-4 ${isRtl ? "left-3 sm:left-4" : "right-3 sm:right-4"} flex items-center gap-2 z-10`}>
           <ThemeToggle />
           <div className="flex items-center gap-1 border border-border rounded-lg p-0.5 bg-card/80">
             {(["ar", "darija", "fr"] as const).map((lang) => (
@@ -156,7 +156,7 @@ export default function Signup() {
                 key={lang}
                 type="button"
                 onClick={() => setLanguage(lang)}
-                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                className={`px-1.5 sm:px-2 py-0.5 rounded text-[11px] sm:text-xs font-medium transition-colors ${
                   language === lang
                     ? "bg-primary text-white"
                     : "text-muted-foreground hover:text-foreground"
@@ -169,7 +169,7 @@ export default function Signup() {
         </div>
 
         {/* Mobile logo */}
-        <Link href="/" className="flex items-center gap-2 mb-10 lg:hidden">
+        <Link href="/" className="flex items-center gap-2 mb-6 sm:mb-10 lg:hidden">
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
             <Bot className="w-4 h-4 text-white" />
           </div>
@@ -180,8 +180,8 @@ export default function Signup() {
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
           className="w-full max-w-md"
         >
-          <h1 className="text-3xl font-bold text-foreground mb-2">{getText("title")}</h1>
-          <p className="text-muted-foreground mb-8">{getText("subtitle")}</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1.5 sm:mb-2">{getText("title")}</h1>
+          <p className="text-sm sm:text-base text-muted-foreground mb-6 sm:mb-8">{getText("subtitle")}</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (

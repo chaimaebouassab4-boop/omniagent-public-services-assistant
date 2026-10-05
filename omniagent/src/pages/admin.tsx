@@ -64,7 +64,7 @@ function VisitorStats() {
   return (
     <div className="space-y-6">
       {/* KPI bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {[
           { icon: Eye, value: last24h.length, labelFr: "Vues (24h)", labelAr: "مشاهدات (24 ساعة)", color: "text-primary", bg: "bg-primary/10" },
           { icon: Users, value: last7d.length, labelFr: "Visites (7j)", labelAr: "زيارات (7 أيام)", color: "text-secondary", bg: "bg-secondary/10" },
@@ -74,7 +74,7 @@ function VisitorStats() {
           <Card key={kpi.labelFr} className={`border-0 shadow-sm`}>
             <CardContent className="pt-5 pb-4">
               <div className={`flex items-start gap-3 ${isRtl ? "flex-row-reverse" : ""}`}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${kpi.bg}`}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${kpi.bg}`}>
                   <kpi.icon className={`w-5 h-5 ${kpi.color}`} />
                 </div>
                 <div className={isRtl ? "text-right" : ""}>
@@ -90,12 +90,12 @@ function VisitorStats() {
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+      <div className="flex gap-1 p-1 bg-muted rounded-lg w-full sm:w-fit overflow-x-auto max-w-full scrollbar-none">
         {(["overview", "live", "pages", "geo"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
               activeTab === tab ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -307,27 +307,27 @@ export default function Admin() {
 
   return (
     <AppLayout>
-      <div className="max-w-7xl mx-auto space-y-8">
-        <div className={`flex items-center justify-between ${isRtl ? "flex-row-reverse" : ""}`}>
+      <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8">
+        <div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${isRtl ? "sm:flex-row-reverse" : ""}`}>
           <div className={isRtl ? "text-right" : ""}>
-            <h1 className="text-3xl font-bold text-foreground">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
               {language === "fr" ? "Administration" : language === "ar" ? "لوحة الإدارة" : "لوحة الإدارة"}
             </h1>
-            <p className="text-muted-foreground text-sm mt-1">
+            <p className="text-muted-foreground text-xs sm:text-sm mt-1">
               {language === "fr" ? "Gérez les dossiers et suivez le trafic du site" : "إدارة الملفات ومتابعة حركة الموقع"}
             </p>
           </div>
           {/* Section toggle */}
-          <div className="flex gap-1 p-1 bg-muted rounded-lg">
+          <div className="flex gap-1 p-1 bg-muted rounded-lg w-full sm:w-auto">
             <button
               onClick={() => setActiveSection("cases")}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeSection === "cases" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors text-center ${activeSection === "cases" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
             >
               {language === "fr" ? "Dossiers" : "الملفات"}
             </button>
             <button
               onClick={() => setActiveSection("visitors")}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeSection === "visitors" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors text-center ${activeSection === "visitors" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
             >
               {language === "fr" ? "Visiteurs" : "الزوار"}
             </button>
@@ -380,8 +380,8 @@ export default function Admin() {
             <Card>
               <CardHeader><CardTitle>{language === "fr" ? "Gestion des Dossiers" : "إدارة الملفات"}</CardTitle></CardHeader>
               <CardContent>
-                <div className="rounded-xl border border-border overflow-hidden">
-                  <Table>
+                <div className="w-full max-w-full overflow-x-auto rounded-xl border border-border">
+                  <Table className="min-w-[700px]">
                     <TableHeader>
                       <TableRow className="bg-muted/50">
                         <TableHead className="w-[140px] text-start font-semibold">Réf.</TableHead>

@@ -24,13 +24,13 @@ export const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
     const accompanyingText = newlineIndex !== -1 ? rest.slice(newlineIndex + 2).trim() : "";
 
     return (
-      <div className="space-y-2">
-        <div className="inline-flex items-center gap-2.5 px-3 py-2 rounded-xl bg-card/15 border border-white/20 text-white font-medium text-xs sm:text-sm shadow-xs">
+      <div className="space-y-2 max-w-full overflow-hidden">
+        <div className="inline-flex max-w-full items-center gap-2.5 px-3 py-2 rounded-xl bg-card/15 border border-white/20 text-white font-medium text-xs sm:text-sm shadow-xs">
           <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
             <FileText className="w-4 h-4 text-white" />
           </div>
-          <div className="flex flex-col">
-            <span className="truncate max-w-[200px] sm:max-w-[300px] font-semibold">{filename}</span>
+          <div className="flex flex-col min-w-0">
+            <span className="truncate max-w-[170px] sm:max-w-[300px] font-semibold">{filename}</span>
             <span className="text-[10px] text-white/80">Document joint</span>
           </div>
         </div>
@@ -115,7 +115,7 @@ export const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
             </blockquote>
           ),
           table: ({ children }) => (
-            <div className="overflow-x-auto my-2 rounded-lg border border-border">
+            <div className="max-w-full overflow-x-auto my-2 rounded-lg border border-border">
               <table className="min-w-full divide-y divide-border text-xs">{children}</table>
             </div>
           ),
@@ -130,7 +130,7 @@ export const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
             </td>
           ),
           code: ({ children }) => (
-            <code className="px-1.5 py-0.5 rounded bg-muted font-mono text-[11px] text-foreground">
+            <code className="px-1.5 py-0.5 rounded bg-muted font-mono text-[11px] text-foreground break-all">
               {children}
             </code>
           ),

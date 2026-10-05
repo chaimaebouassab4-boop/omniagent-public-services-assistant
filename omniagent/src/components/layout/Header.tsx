@@ -112,13 +112,13 @@ export function Header({
       </nav>
 
       <div className="ms-auto flex shrink-0 items-center gap-1 sm:gap-1.5 xl:ms-0">
-        <div className="hidden items-center rounded-md border bg-muted/35 p-0.5 lg:flex" aria-label="Langue">
+        <div className="flex items-center rounded-md border bg-muted/35 p-0.5" aria-label="Langue">
           {LANGUAGE_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => setLanguage(option.value)}
-              className={`rounded px-2 py-1 text-[11px] font-semibold transition-colors ${
+              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors sm:px-2 sm:py-1 sm:text-[11px] ${
                 language === option.value ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
               }`}
               aria-pressed={language === option.value}
@@ -142,7 +142,7 @@ export function Header({
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align={isRtl ? "start" : "end"} className="w-80 p-0" dir={isRtl ? "rtl" : "ltr"}>
+            <PopoverContent align={isRtl ? "start" : "end"} className="w-[calc(100vw-2rem)] max-w-xs sm:w-80 p-0" dir={isRtl ? "rtl" : "ltr"}>
               <div className="flex items-center justify-between border-b px-3 py-2.5">
                 <span className="text-sm font-semibold">{language === "fr" ? "Notifications" : "الإشعارات"}</span>
                 {pendingCount > 0 && <Badge variant="destructive">{pendingCount}</Badge>}

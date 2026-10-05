@@ -102,14 +102,38 @@ export function Sidebar({
       </aside>
 
       <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
-        <SheetContent side={isRtl ? "right" : "left"} className="w-[min(86vw,320px)] p-0 md:hidden" dir={isRtl ? "rtl" : "ltr"}>
-          <SheetHeader className="border-b px-4 py-5 text-start">
+        <SheetContent side={isRtl ? "right" : "left"} className="flex flex-col w-[min(86vw,320px)] p-0 md:hidden" dir={isRtl ? "rtl" : "ltr"}>
+          <SheetHeader className="border-b px-4 py-4 text-start shrink-0">
             <SheetTitle className="flex items-center gap-2.5">
               <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Landmark className="h-5 w-5" /></span>
               <span>{t("app.title")}</span>
             </SheetTitle>
           </SheetHeader>
-          <NavigationLinks navigation={navigation} collapsed={false} onNavigate={() => onMobileOpenChange(false)} />
+          <div className="flex-1 overflow-y-auto">
+            <NavigationLinks navigation={navigation} collapsed={false} onNavigate={() => onMobileOpenChange(false)} />
+          </div>
+          <div className="border-t p-3 bg-muted/20 shrink-0">
+            <div className="flex items-center justify-between gap-1 rounded-lg border bg-card p-1">
+              {[
+                { value: "fr", label: "Français" },
+                { value: "ar", label: "العربية" },
+                { value: "darija", label: "الدارجة" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setLanguage(opt.value as any)}
+                  className={`flex-1 rounded py-1 text-xs font-semibold transition-colors ${
+                    language === opt.value
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </SheetContent>
       </Sheet>
     </>

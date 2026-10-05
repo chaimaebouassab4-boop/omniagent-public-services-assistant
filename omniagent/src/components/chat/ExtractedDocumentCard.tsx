@@ -322,7 +322,7 @@ export function ExtractedDocumentCard({
       </div>
 
       {/* ── Action Buttons: Pre-fill Request + Send to Chat ──────────────── */}
-      <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/40">
+      <div className="mt-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-2 pt-2 border-t border-border/40">
         <div>
           {!cinNumber && !firstName && (
             <Button
@@ -330,7 +330,7 @@ export function ExtractedDocumentCard({
               variant="ghost"
               size="sm"
               onClick={loadDemoProfile}
-              className="text-xs text-primary hover:bg-primary/10 gap-1.5 h-8 px-2.5 font-medium"
+              className="text-xs text-primary hover:bg-primary/10 gap-1.5 h-8 px-2.5 font-medium w-full sm:w-auto justify-center"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               {language === "fr" ? "Charger profil démo (Ahmed Benali)" : "ملء بملف تجريبي (أحمد بنعلي)"}
@@ -338,14 +338,14 @@ export function ExtractedDocumentCard({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
           {onSendToChat && (
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => onSendToChat()}
-              className="rounded-xl text-xs gap-1.5 h-9"
+              className="rounded-xl text-xs gap-1.5 h-9 w-full sm:w-auto justify-center"
             >
               <Send className="w-3.5 h-3.5" />
               {language === "fr" ? "Discuter de cette pièce" : "إرسال إلى المحادثة"}
@@ -356,7 +356,7 @@ export function ExtractedDocumentCard({
             type="button"
             size="sm"
             onClick={handlePreFill}
-            className="rounded-xl text-xs gap-1.5 h-9 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm font-medium"
+            className="rounded-xl text-xs gap-1.5 h-9 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm font-medium w-full sm:w-auto justify-center"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
             {language === "fr" ? "Pré-remplir ma démarche" : "ملء الإجراء تلقائياً"}

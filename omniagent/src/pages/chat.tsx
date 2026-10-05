@@ -445,8 +445,8 @@ export default function Chat() {
 
   return (
     <AppLayout fullHeight>
-      <div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-3 bg-background">
-        <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:px-5 lg:px-6">
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-2 bg-background sm:gap-3">
+        <div className="flex shrink-0 items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2 sm:gap-3 sm:px-5 sm:py-3 lg:px-6">
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-[#17365d] dark:text-foreground sm:text-xl">{t("nav.chat")}</h1>
             <p className="hidden text-xs text-muted-foreground sm:block">{language === "fr" ? "Information et accompagnement pour vos démarches administratives" : "المعلومات والمواكبة في إجراءاتك الإدارية"}</p>
@@ -484,18 +484,18 @@ export default function Chat() {
           </aside>
 
           <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-muted/20" aria-label={language === "fr" ? "Conversation" : "المحادثة"}>
-            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-5">
+            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3 py-2.5 sm:px-5 sm:py-3">
               <div className="min-w-0">
                 <h2 dir="auto" className="truncate text-sm font-semibold text-[#17365d] dark:text-foreground">
                   {activeSession?.title || (language === "fr" ? "Nouvelle conversation" : "محادثة جديدة")}
                 </h2>
-                <p className="text-xs text-muted-foreground">{language === "fr" ? "Assistant administratif numérique · Sources documentaires vérifiées" : "مساعد إداري رقمي · مصادر وثائقية موثوقة"}</p>
+                <p className="truncate text-xs text-muted-foreground">{language === "fr" ? "Assistant administratif numérique · Sources documentaires vérifiées" : "مساعد إداري رقمي · مصادر وثائقية موثوقة"}</p>
               </div>
             </header>
             <ScrollArea className="min-h-0 flex-1" viewportRef={scrollRef}>
-              <div className="space-y-5 px-3 py-5 sm:px-5 lg:px-6">
+              <div className="space-y-3 px-3 py-3 sm:space-y-5 sm:px-5 sm:py-5 lg:px-6">
                 {!displayMessages.length && !sendChatMessage.isPending && (
-                  <div className="mx-auto w-full max-w-3xl px-1 py-4 text-center sm:py-8">
+                  <div className="mx-auto w-full max-w-3xl px-1 py-2 text-center sm:py-8">
                     {/* Assistant Avatar Badge */}
                     <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-lg border border-primary/20 bg-primary/5 text-primary">
                       <Landmark className="h-5 w-5" />
@@ -511,7 +511,7 @@ export default function Chat() {
                     </h2>
 
                     {/* Structured Description */}
-                    <p className="mx-auto mb-5 max-w-lg text-sm leading-relaxed text-muted-foreground">
+                    <p className="mx-auto mb-3 max-w-lg text-sm leading-relaxed text-muted-foreground sm:mb-5">
                       {language === "fr"
                         ? "Je peux vous orienter dans vos démarches, vérifier la conformité de vos pièces jointes ou suivre l'état d'avancement de vos dossiers."
                         : language === "ar"
@@ -520,8 +520,8 @@ export default function Chat() {
                     </p>
 
                     {/* 3 Structured Capabilities */}
-                    <div className="mb-6 grid grid-cols-1 gap-2 text-start sm:grid-cols-3" dir={isRtl ? "rtl" : "ltr"}>
-                      <div className="rounded-md border border-border bg-muted/20 p-3">
+                    <div className="mb-4 grid grid-cols-1 gap-2 text-start sm:mb-6 sm:grid-cols-3" dir={isRtl ? "rtl" : "ltr"}>
+                      <div className="rounded-md border border-border bg-muted/20 p-2.5 sm:p-3">
                         <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-md bg-primary/5 text-primary">
                           <Compass className="w-4 h-4" />
                         </div>
@@ -533,7 +533,7 @@ export default function Chat() {
                         </p>
                       </div>
 
-                      <div className="rounded-md border border-border bg-muted/20 p-3">
+                      <div className="rounded-md border border-border bg-muted/20 p-2.5 sm:p-3">
                         <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-md bg-primary/5 text-primary">
                           <FileCheck2 className="w-4 h-4" />
                         </div>
@@ -545,7 +545,7 @@ export default function Chat() {
                         </p>
                       </div>
 
-                      <div className="rounded-md border border-border bg-muted/20 p-3">
+                      <div className="rounded-md border border-border bg-muted/20 p-2.5 sm:p-3">
                         <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-md bg-primary/5 text-primary">
                           <FolderClock className="w-4 h-4" />
                         </div>
@@ -581,11 +581,11 @@ export default function Chat() {
                   </div>
                 )}
                 {displayMessages.map((msg) => (
-                  <div key={msg.id} className={`flex min-w-0 gap-2.5 sm:gap-3 ${msg.role === 'user' ? 'max-w-[92%] sm:max-w-[76%] xl:max-w-[70%]' : 'max-w-[94%] sm:max-w-[84%] xl:max-w-[78%]'} ${msg.role === 'user' ? (isRtl ? 'mr-auto flex-row-reverse' : 'ml-auto flex-row-reverse') : (isRtl ? 'ml-auto' : 'mr-auto')}`}>
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${msg.role === 'user' ? 'border-[#17365d] bg-[#17365d] text-white' : 'border-primary/25 bg-card text-primary'}`}>
-                      {msg.role === 'user' ? <User className="h-[18px] w-[18px]" /> : <Landmark className="h-[18px] w-[18px]" />}
+                  <div key={msg.id} className={`flex min-w-0 gap-2 sm:gap-3 ${msg.role === 'user' ? 'max-w-[96%] sm:max-w-[76%] xl:max-w-[70%]' : 'max-w-[98%] sm:max-w-[84%] xl:max-w-[78%]'} ${msg.role === 'user' ? (isRtl ? 'mr-auto flex-row-reverse' : 'ml-auto flex-row-reverse') : (isRtl ? 'ml-auto' : 'mr-auto')}`}>
+                    <div className={`flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg border ${msg.role === 'user' ? 'border-[#17365d] bg-[#17365d] text-white' : 'border-primary/25 bg-card text-primary'}`}>
+                      {msg.role === 'user' ? <User className="h-4 w-4 sm:h-[18px] sm:w-[18px]" /> : <Landmark className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />}
                     </div>
-                    <div className={`min-w-0 break-words rounded-xl border px-4 py-3 text-sm leading-relaxed sm:px-5 sm:py-4 ${msg.role === 'user' ? 'border-[#17365d] bg-[#17365d] text-white' : 'border-border bg-card text-card-foreground'}`}>
+                    <div className={`min-w-0 break-words rounded-xl border px-3 py-2 text-xs leading-relaxed sm:px-5 sm:py-4 sm:text-sm ${msg.role === 'user' ? 'border-[#17365d] bg-[#17365d] text-white' : 'border-border bg-card text-card-foreground'}`}>
                       <ChatMessageContent
                         content={msg.content}
                         role={msg.role as "user" | "assistant"}
@@ -763,7 +763,7 @@ export default function Chat() {
                   )}
                   {isTranscribing && <Loader2 className="h-5 w-5 animate-spin text-primary" aria-hidden="true" />}
                 </div>
-              ) : <form onSubmit={handleSendMessage} className="flex shrink-0 items-center gap-0.5 rounded-xl border border-border bg-background p-1.5 sm:gap-1">
+              ) : <form onSubmit={handleSendMessage} className="flex shrink-0 items-center gap-0.5 rounded-xl border border-border bg-background p-1 sm:p-1.5 sm:gap-1">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -776,7 +776,7 @@ export default function Chat() {
                   type="button"
                   variant={stagedFile ? "secondary" : "outline"}
                   size="icon"
-                  className={`h-9 w-9 shrink-0 rounded-md border-0 shadow-none sm:h-10 sm:w-10 ${
+                  className={`h-8 w-8 shrink-0 rounded-md border-0 shadow-none sm:h-10 sm:w-10 ${
                     stagedFile ? "text-primary border-primary/40 bg-primary/10" : "text-muted-foreground"
                   }`}
                   disabled={isUploading}
@@ -792,14 +792,14 @@ export default function Chat() {
                       : (language === "fr" ? "Joindre un document" : "إرفاق وثيقة")
                   }
                 >
-                  {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+                  {isUploading ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Upload className="w-4 h-4 sm:w-5 sm:h-5" />}
                 </Button>
-                <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-md text-muted-foreground sm:h-10 sm:w-10"
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-md text-muted-foreground sm:h-10 sm:w-10"
                   onClick={() => void handleStartRecording()}
                   disabled={isUploading || sendChatMessage.isPending}
                   title={language === "fr" ? "Enregistrer un message vocal" : "تسجيل رسالة صوتية"}
                   aria-label={language === "fr" ? "Enregistrer un message vocal" : "تسجيل رسالة صوتية"}>
-                  <Mic className="w-5 h-5" />
+                  <Mic className="w-4 h-4 sm:w-5 sm:h-5" />
                 </Button>
                 <Input 
                   value={messageInput} 
@@ -809,21 +809,21 @@ export default function Chat() {
                       ? (language === "fr" ? "Ajouter un message avec votre document (optionnel)..." : "أضف رسالة مع الوثيقة (اختياري)...")
                       : t("chat.placeholder")
                   }
-                  className="h-9 min-w-0 flex-1 border-0 bg-transparent px-2 text-base shadow-none focus-visible:ring-0 sm:h-10 sm:px-3"
+                  className="h-8 min-w-0 flex-1 border-0 bg-transparent px-1.5 text-sm shadow-none focus-visible:ring-0 sm:h-10 sm:px-3 sm:text-base"
                   aria-label={language === "fr" ? "Votre message" : "رسالتك"}
                 />
                 <Button 
                   type="submit" 
                   size="icon" 
                   disabled={(!messageInput.trim() && !stagedFile) || sendChatMessage.isPending || isUploading} 
-                  className="h-9 w-9 shrink-0 rounded-md bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-50 sm:h-10 sm:w-10"
+                  className="h-8 w-8 shrink-0 rounded-md bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-50 sm:h-10 sm:w-10"
                   title={language === "fr" ? "Envoyer" : "إرسال"}
                   aria-label={language === "fr" ? "Envoyer le message" : "إرسال الرسالة"}
                 >
                   {isUploading || sendChatMessage.isPending ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
                   ) : (
-                    <Send className={`w-5 h-5 ${isRtl ? 'rotate-180' : ''}`} />
+                    <Send className={`w-4 h-4 sm:w-5 sm:h-5 ${isRtl ? 'rotate-180' : ''}`} />
                   )}
                 </Button>
               </form>}

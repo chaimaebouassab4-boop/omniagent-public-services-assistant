@@ -237,18 +237,18 @@ export default function Profile() {
 
   return (
     <AppLayout>
-      <div className="max-w-3xl mx-auto space-y-8">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-foreground">{t("profile.title")}</h1>
+      <div className="max-w-3xl mx-auto space-y-6 sm:space-y-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">{t("profile.title")}</h1>
           {isAuthenticated() && (
-            <Button variant="outline" onClick={handleLogout} className="gap-2">
+            <Button variant="outline" onClick={handleLogout} className="gap-2 w-full sm:w-auto">
               <LogOut className="w-4 h-4" />
               {language === "fr" ? "Déconnexion" : "تسجيل الخروج"}
             </Button>
           )}
         </div>
 
-        <div className="grid gap-6">
+        <div className="grid gap-4 sm:gap-6">
           <Card>
             <CardHeader>
               <CardTitle>{language === "fr" ? "Informations Personnelles" : "المعلومات الشخصية"}</CardTitle>
@@ -309,29 +309,31 @@ export default function Profile() {
               />
 
               {/* CIN */}
-              <div className="flex items-center gap-4 p-4 rounded-lg border bg-card">
-                <IdCard className="w-8 h-8 text-primary shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold">
-                    {language === "fr" ? "Carte d'Identité Nationale (CIN)" : "البطاقة الوطنية للتعريف"}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-3.5 sm:p-4 rounded-lg border bg-card">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <IdCard className="w-7 h-7 sm:w-8 sm:h-8 text-primary shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold">
+                      {language === "fr" ? "Carte d'Identité Nationale (CIN)" : "البطاقة الوطنية للتعريف"}
+                    </div>
+                    {cinFileName ? (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-green-600 shrink-0" />
+                        <span className="truncate" title={cinFileName}>{cinFileName}</span>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {language === "fr" ? "Aucun fichier importé (PNG ou PDF)" : "لم يتم استيراد أي ملف (PNG أو PDF)"}
+                      </div>
+                    )}
                   </div>
-                  {cinFileName ? (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
-                      <span className="truncate" title={cinFileName}>{cinFileName}</span>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {language === "fr" ? "Aucun fichier importé (PNG ou PDF)" : "لم يتم استيراد أي ملف (PNG أو PDF)"}
-                    </div>
-                  )}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t border-border/50 sm:border-t-0">
                   {cinFileName && (
                     <Button
                       variant="outline"
                       size="sm"
-                      className="gap-1.5"
+                      className="gap-1.5 flex-1 sm:flex-none"
                       disabled={viewingCin || loading}
                       onClick={handleViewCin}
                       data-testid="button-view-cin"
@@ -343,7 +345,7 @@ export default function Profile() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="gap-1.5"
+                    className="gap-1.5 flex-1 sm:flex-none"
                     disabled={uploadingCin || loading}
                     onClick={() => cinInputRef.current?.click()}
                     data-testid="button-upload-cin"
@@ -376,9 +378,9 @@ export default function Profile() {
                 </div>
                 <div className="space-y-2">
                   {personalDocuments.map((doc) => (
-                    <div key={doc.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <FileText className="w-5 h-5 text-primary shrink-0" />
+                    <div key={doc.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
+                      <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                        <FileText className="w-5 h-5 text-primary shrink-0 mt-0.5 sm:mt-0" />
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium truncate" title={doc.name}>{doc.name}</div>
                           <div className="text-xs text-muted-foreground">
@@ -387,7 +389,7 @@ export default function Profile() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 pt-2 sm:pt-0 border-t border-border/50 sm:border-t-0">
                         <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 shrink-0">
                           {language === "fr" ? "Importé" : "مستورد"}
                         </Badge>
@@ -505,7 +507,7 @@ export default function Profile() {
               <CardTitle>{language === "fr" ? "Notifications" : "الإشعارات"}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <Label htmlFor="notif-email" className="flex flex-col gap-1">
                   <span>{language === "fr" ? "Notifications par Email" : "إشعارات البريد الإلكتروني"}</span>
                   <span className="font-normal text-sm text-muted-foreground">
@@ -531,7 +533,7 @@ export default function Profile() {
                   }}
                 />
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 sm:pt-0 border-t border-border/50 sm:border-t-0">
                 <Label htmlFor="notif-sms" className="flex flex-col gap-1">
                   <span>{language === "fr" ? "Notifications par SMS" : "إشعارات SMS"}</span>
                   <span className="font-normal text-sm text-muted-foreground">
@@ -570,7 +572,7 @@ export default function Profile() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl h-[85vh] flex flex-col" dir={isRtl ? "rtl" : "ltr"}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[85vh] flex flex-col p-3 sm:p-6" dir={isRtl ? "rtl" : "ltr"}>
           <DialogHeader>
             <DialogTitle>
               {language === "fr" ? "Carte d'Identité Nationale (CIN)" : "البطاقة الوطنية للتعريف"}
@@ -605,10 +607,10 @@ export default function Profile() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-4 sm:p-6" dir={isRtl ? "rtl" : "ltr"}>
-          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b">
-            <div className="text-start">
-              <DialogTitle className="text-base sm:text-lg font-bold truncate max-w-[500px]">
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[85vh] flex flex-col p-3 sm:p-6" dir={isRtl ? "rtl" : "ltr"}>
+          <DialogHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b">
+            <div className="text-start min-w-0 flex-1">
+              <DialogTitle className="text-base sm:text-lg font-bold truncate max-w-full sm:max-w-[500px]">
                 {personalPreviewDoc?.name}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
@@ -619,7 +621,7 @@ export default function Profile() {
               <Button
                 size="sm"
                 variant="outline"
-                className="gap-1.5 shrink-0"
+                className="gap-1.5 shrink-0 w-full sm:w-auto justify-center"
                 onClick={() => {
                   const a = document.createElement("a");
                   a.href = personalPreviewDoc.url;
@@ -659,7 +661,7 @@ export default function Profile() {
           if (!open && !isDeleting) setDocToDelete(null);
         }}
       >
-        <DialogContent className="max-w-md p-6 sm:p-7 rounded-2xl shadow-2xl" dir={isRtl ? "rtl" : "ltr"}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md p-4 sm:p-7 rounded-2xl shadow-2xl" dir={isRtl ? "rtl" : "ltr"}>
           <div className="flex flex-col items-center text-center space-y-4 pt-2">
             <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-950/60 flex items-center justify-center text-red-600 ring-8 ring-red-50 dark:ring-red-950/30">
               <Trash2 className="w-7 h-7" />

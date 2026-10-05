@@ -201,13 +201,13 @@ export default function CaseDetail() {
             <p className="whitespace-pre-wrap">{caseData.notes}</p>
           </CardContent></Card>}
           <Card className="shrink-0">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
               {caseLoading ? (
                 <div className="space-y-2"><Skeleton className="h-6 w-1/3" /><Skeleton className="h-4 w-1/4" /></div>
               ) : (
-                <div className="flex flex-wrap justify-between items-start gap-3">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                   <div>
-                    <h1 className="text-2xl font-bold mb-1">
+                    <h1 className="text-xl sm:text-2xl font-bold mb-1">
                       {language === "fr" ? caseData?.service?.nameFr : caseData?.service?.nameAr}
                     </h1>
                     <div className="text-sm text-muted-foreground">{language === "fr" ? "Suivi" : "رمز التتبع"}: {caseData?.trackingCode ?? caseData?.referenceNumber}</div>
@@ -234,7 +234,7 @@ export default function CaseDetail() {
         </div>
 
         {/* Right Column: Timeline & Checklist */}
-        <div className="grid items-start gap-6 lg:grid-cols-2 min-w-0">
+        <div className="grid items-start gap-4 sm:gap-6 lg:grid-cols-2 min-w-0">
           {isAdmin && caseId > 0 && <AdminCopilotCard caseId={caseId} />}
           {caseData && <Card>
             <CardHeader><CardTitle className="text-base">{language === "fr" ? "Suivi du dossier" : "تتبع الطلب"}</CardTitle></CardHeader>
@@ -260,13 +260,15 @@ export default function CaseDetail() {
               ) : caseData.documentChecklist.filter(item => item.status !== "PRESENT").length === 0 ? (
                 <p className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 className="h-5 w-5 shrink-0" />{language === "fr" ? "Toutes les pièces demandées sont déposées. Leur validation reste à la charge de l’administration." : "تم إيداع جميع الوثائق المطلوبة. المصادقة عليها تبقى من اختصاص الإدارة."}</p>
               ) : caseData.documentChecklist.filter(item => item.status !== "PRESENT").map(item => (
-                <div key={item.requirement} className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 dark:bg-amber-950/20">
-                  <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
-                  <div className="flex-1 min-w-0 text-sm">
-                    <p className="font-medium break-words">{language === "fr" ? item.labelFr : item.labelAr}</p>
-                    <p className="text-muted-foreground">{item.status === "UNREADABLE" ? (language === "fr" ? "À remplacer : pièce illisible ou rejetée" : "يجب تعويض الوثيقة غير المقروءة أو المرفوضة") : (language === "fr" ? "Non déposée" : "لم يتم إيداعها")}</p>
+                <div key={item.requirement} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 dark:bg-amber-950/20">
+                  <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1">
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5 sm:mt-0" />
+                    <div className="flex-1 min-w-0 text-sm">
+                      <p className="font-medium break-words">{language === "fr" ? item.labelFr : item.labelAr}</p>
+                      <p className="text-muted-foreground text-xs">{item.status === "UNREADABLE" ? (language === "fr" ? "À remplacer : pièce illisible ou rejetée" : "يجب تعويض الوثيقة غير المقروءة أو المرفوضة") : (language === "fr" ? "Non déposée" : "لم يتم إيداعها")}</p>
+                    </div>
                   </div>
-                  <Button size="sm" variant="outline" disabled={isUploading} onClick={() => { setUploadType(item.requirement); fileInputRef.current?.click(); }}>
+                  <Button size="sm" variant="outline" className="w-full sm:w-auto shrink-0 justify-center" disabled={isUploading} onClick={() => { setUploadType(item.requirement); fileInputRef.current?.click(); }}>
                     <Upload className="h-4 w-4 me-2" />{language === "fr" ? "Déposer" : "إيداع"}
                   </Button>
                 </div>
@@ -295,9 +297,9 @@ export default function CaseDetail() {
             <CardContent>
               <div className="space-y-2">
                 {documents?.map((doc) => (
-                  <div key={doc.id} className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <FileText className="w-5 h-5 text-primary shrink-0" />
+                  <div key={doc.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors">
+                    <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                      <FileText className="w-5 h-5 text-primary shrink-0 mt-0.5 sm:mt-0" />
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium truncate" title={doc.name}>{doc.name}</div>
                         <div className="text-xs text-muted-foreground">{formatFileSize(doc.fileSize)} · {new Date(doc.uploadedAt).toLocaleDateString(language === "fr" ? "fr-MA" : "ar-MA")}</div>
@@ -310,7 +312,7 @@ export default function CaseDetail() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 pt-2 sm:pt-0 border-t border-border/50 sm:border-t-0">
                       <Badge
                         variant="outline"
                         className={
@@ -414,10 +416,10 @@ export default function CaseDetail() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-4 sm:p-6" dir={isRtl ? "rtl" : "ltr"}>
-          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b">
-            <div className="text-start">
-              <DialogTitle className="text-base sm:text-lg font-bold truncate max-w-[500px]">
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[85vh] flex flex-col p-3 sm:p-6" dir={isRtl ? "rtl" : "ltr"}>
+          <DialogHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b">
+            <div className="text-start min-w-0 flex-1">
+              <DialogTitle className="text-base sm:text-lg font-bold truncate max-w-full sm:max-w-[500px]">
                 {previewDoc?.name}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
@@ -428,7 +430,7 @@ export default function CaseDetail() {
               <Button
                 size="sm"
                 variant="outline"
-                className="gap-1.5 shrink-0"
+                className="gap-1.5 shrink-0 w-full sm:w-auto justify-center"
                 onClick={() => {
                   const a = document.createElement("a");
                   a.href = previewDoc.url;
@@ -468,7 +470,7 @@ export default function CaseDetail() {
           if (!open && !isDeleting) setDocToDelete(null);
         }}
       >
-        <DialogContent className="max-w-md p-6 sm:p-7 rounded-2xl shadow-2xl" dir={isRtl ? "rtl" : "ltr"}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md p-4 sm:p-7 rounded-2xl shadow-2xl" dir={isRtl ? "rtl" : "ltr"}>
           <div className="flex flex-col items-center text-center space-y-4 pt-2">
             <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-950/60 flex items-center justify-center text-red-600 ring-8 ring-red-50 dark:ring-red-950/30">
               <Trash2 className="w-7 h-7" />
