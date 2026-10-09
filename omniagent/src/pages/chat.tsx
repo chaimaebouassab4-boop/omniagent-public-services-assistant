@@ -359,7 +359,12 @@ export default function Chat() {
     });
   };
 
-  const prompts = language === "fr"
+  const contextualPrompts = [...displayMessages]
+    .reverse()
+    .find((message) => message.role === "assistant" && message.suggestedQuestions?.length)
+    ?.suggestedQuestions ?? [];
+
+  const defaultPrompts = language === "fr"
     ? [
         "Comment renouveler ma carte d'identité (CIN) ?",
         "Quels documents pour un certificat de résidence ?",
@@ -379,6 +384,9 @@ export default function Chat() {
         "شنو هي المدة القانونية باش نيلغ على الوفاة؟",
         "شحال ديال الوقت باش يخرج السجل العدلي؟",
       ];
+  // Once the backend has resolved a procedure, it returns only questions
+  // derived from that procedure's available KB sections.
+  const prompts = contextualPrompts.length > 0 ? contextualPrompts : defaultPrompts;
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);

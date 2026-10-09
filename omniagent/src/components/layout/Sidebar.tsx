@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Landmark } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type Language } from "@/lib/i18n";
 import {
   isNavigationItemActive,
   type LayoutNavigationItem,
@@ -72,7 +72,7 @@ export function Sidebar({
   mobileOpen,
   onMobileOpenChange,
 }: SidebarProps) {
-  const { language, isRtl, t } = useI18n();
+  const { language, setLanguage, isRtl, t } = useI18n();
   const CollapseIcon = isRtl ? ChevronRight : ChevronLeft;
   const ExpandIcon = isRtl ? ChevronLeft : ChevronRight;
 
@@ -122,7 +122,7 @@ export function Sidebar({
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => setLanguage(opt.value as any)}
+                  onClick={() => setLanguage(opt.value as Language)}
                   className={`flex-1 rounded py-1 text-xs font-semibold transition-colors ${
                     language === opt.value
                       ? "bg-primary text-primary-foreground shadow-xs"
