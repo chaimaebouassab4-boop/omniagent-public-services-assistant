@@ -1,5 +1,7 @@
 # FAQ - عقد الازدياد
 
+<!-- Compatibility mirror. Canonical structured content: birth_certificate.json -->
+
 **محدث: مارس 2026**
 
 1. **هل يمكن طلب عقد الازدياد أونلاين؟**  

@@ -1,5 +1,7 @@
 # FAQ - شهادة السكنى
 
+<!-- Compatibility mirror. Canonical structured content: residence_certificate.json -->
+
 **محدث: مارس 2026**
 
 1. **كم الرسوم ديال شهادة السكنى؟**  

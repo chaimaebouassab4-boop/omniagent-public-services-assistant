@@ -11,16 +11,25 @@ def test_identity_card_aliases_and_multilingual_detection():
     assert _detect_service_from_query("كيفاش نجدد بطاقة التعريف الوطنية؟") == "identity_card"
 
 
-def test_loader_indexes_all_structured_identity_fields():
+def test_loader_indexes_normalized_identity_sections():
     identity_nodes = [
         node for node in _load_kb_nodes()
         if node.metadata.get("service_type") == "identity_card"
     ]
     node_types = {node.metadata.get("node_type") for node in identity_nodes}
-    assert "procedure_types" in node_types
-    assert "legal_basis" in node_types
-    assert "conditions" in node_types
-    assert "issuing_authorities" in node_types
+    assert {
+        "description",
+        "required_documents",
+        "steps",
+        "where_to_apply",
+        "personal_presence",
+        "fees",
+        "validity",
+        "special_cases",
+        "faq",
+    } <= node_types
+    assert "procedure_types" not in node_types
+    assert "conditions" not in node_types
 
 
 def test_cin_question_uses_identity_card_knowledge_without_llm():

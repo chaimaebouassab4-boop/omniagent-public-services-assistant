@@ -5,24 +5,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
 
+from app.services.procedure_schema import PROCEDURE_DIRS
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 KB_ROOT = PROJECT_ROOT / "tests" / "knowledge_base"
 
 # Canonical service id -> knowledge base folder name.
-SERVICE_DIRS = {
-    "identity_card": "identity_card",
-    "residence_certificate": "residence",
-    "birth_certificate": "birth",
-    "marriage_contract": "marriage",
-    "death_certificate": "death",
-    "life_certificate": "life",
-    "single_status_certificate": "single_status",
-    "non_property_certificate": "non_property",
-    "administrative_certificate": "administrative",
-    "good_conduct_certificate": "good_conduct",
-    "criminal_record": "criminal_record",
-}
+SERVICE_DIRS = PROCEDURE_DIRS
 
 COMMON_KB_PATH = KB_ROOT / "common" / "faq.json"
 
@@ -45,6 +35,7 @@ SERVICE_ALIASES = {
     "life": "life_certificate",
     "vie": "life_certificate",
     "single_status": "single_status_certificate",
+    "single_status_certificate": "single_status_certificate",
     "celibat": "single_status_certificate",
     "non_property": "non_property_certificate",
     "administrative": "administrative_certificate",
@@ -197,12 +188,15 @@ def _structured_fallback(user_message: str, knowledge: dict[str, Any]) -> str | 
                 ans = str(entry.get("answer", "")).strip()
                 if ans:
                     return ans
-        # Check validity_period
-        validity = knowledge.get("validity_period")
+        processing_time = knowledge.get("processing_time")
+        if isinstance(processing_time, str) and processing_time:
+            return processing_time
+        # Check normalized or legacy validity.
+        validity = knowledge.get("validity") or knowledge.get("validity_period")
         if isinstance(validity, str) and validity:
             return validity
         # Check general_steps for timing notes
-        steps = knowledge.get("general_steps")
+        steps = knowledge.get("steps") or knowledge.get("general_steps")
         if isinstance(steps, list):
             for s in steps:
                 if any(k in str(s) for k in ["يوماً", "أيام", "ساعة", "شهر", "30"]):
@@ -210,6 +204,8 @@ def _structured_fallback(user_message: str, knowledge: dict[str, Any]) -> str | 
 
     # ── Fees ──
     fees = knowledge.get("fees")
+    if isinstance(fees, dict):
+        fees = fees.get("amount") or fees.get("notes")
     if isinstance(fees, str) and any(
         term in lowered_message for term in ["رسوم", "ثمن", "شحال كتكلف", "واجبات", "prix", "fee", "fees", "cost"]
     ):
@@ -225,8 +221,32 @@ def _structured_fallback(user_message: str, knowledge: dict[str, Any]) -> str | 
                     docs_preview = "\n".join(f"- {doc}" for doc in docs[:4])
                     return f"Hadi awel watha2iq lli khassek ghaliban:\n{docs_preview}"
         if isinstance(required, list) and required:
-            docs_preview = "\n".join(f"- {doc}" for doc in required[:4])
+            flattened: list[str] = []
+            for item in required:
+                if isinstance(item, dict):
+                    flattened.extend(str(doc) for doc in item.get("items", []))
+                else:
+                    flattened.append(str(item))
+            docs_preview = "\n".join(f"- {doc}" for doc in flattened[:4])
             return f"Hadi awel watha2iq lli khassek ghaliban:\n{docs_preview}"
+
+    # ── Place of application ──
+    if any(term in lowered_message for term in ["فين", "أين", "اين", "مكان", "نودع", "ندفع", "نصاوب", "où", "where"]):
+        where = knowledge.get("where_to_apply")
+        if isinstance(where, dict):
+            place = where.get("description") or where.get("type")
+            if place:
+                return str(place)
+
+    # ── Personal presence ──
+    if any(term in lowered_message for term in ["حضور", "شخصيا", "شخصياً", "نحضر", "présence", "personnellement"]):
+        presence = knowledge.get("personal_presence")
+        if isinstance(presence, dict) and presence.get("required") is not None:
+            answer = "نعم، الحضور الشخصي ضروري." if presence.get("required") else "الحضور الشخصي غير ضروري."
+            exceptions = presence.get("exceptions") or []
+            if exceptions:
+                answer += " " + " ".join(str(item) for item in exceptions)
+            return answer
 
     # ── FAQ Partial / Substring Match ──
     for entry in knowledge.get("faq", []):

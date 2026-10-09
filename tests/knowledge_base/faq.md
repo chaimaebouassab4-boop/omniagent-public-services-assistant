@@ -1,5 +1,7 @@
 # الأسئلة الشائعة حول الشواهد الإدارية الجديدة (FAQ)
 
+<!-- Legacy aggregate compatibility mirror. Canonical structured content lives in each procedure JSON. -->
+
 هذا الملف يجمع أهم الأسئلة والأجوبة المتعلقة بالخدمات الإدارية الأربعة: شهادة الحياة، شهادة العزوبة، شهادة عدم الملكية، والشهادة الإدارية.
 
 ## 1. شهادة الحياة (Certificat de vie)

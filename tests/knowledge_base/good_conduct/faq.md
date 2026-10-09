@@ -1,5 +1,7 @@
 # FAQ - شهادة حسن السيرة
 
+<!-- Compatibility mirror. Canonical structured content: good_conduct_certificate.json -->
+
 **محدث: مارس 2026**
 
 1. **واش نقدر ناخد شهادة حسن السيرة أونلاين؟**  

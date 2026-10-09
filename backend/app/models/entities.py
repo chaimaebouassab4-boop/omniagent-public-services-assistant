@@ -110,6 +110,10 @@ class ChatMessage(Base):
     sender: Mapped[str] = mapped_column(String)
     message: Mapped[str] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String, default="darija")
+    # Persist the resolved procedure on each turn so session state survives
+    # process restarts and remains isolated by user + session_id.
+    procedure_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    suggested_questions: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     case: Mapped[Case | None] = relationship(back_populates="chat_messages")

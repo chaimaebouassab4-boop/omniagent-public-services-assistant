@@ -5,9 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 # reference; the omniagent frontend is served by the `omni` router below.
 from app.api import auth, chat, health, omni  # noqa: F401
 from app.core.config import settings
+from app.core.dev_logging import configure_development_logging
 from app.core.seed_services import seed_admin, seed_services
 from app.db.database import Base, SessionLocal, engine
 from app.db.migrations import migrate
+
+configure_development_logging(settings.debug_logging)
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 

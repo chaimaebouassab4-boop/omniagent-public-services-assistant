@@ -1,5 +1,7 @@
 # FAQ - شهادة عدم الملكية
 
+<!-- Compatibility mirror. Canonical structured content: non_property_certificate.json -->
+
 **محدث: مارس 2026**
 
 1. **واش ضروري نمشي لدار الضريبة باش ناخد شهادة عدم الملكية؟**  

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.agents import evaluate_case
 from app.core.config import settings
+from app.core.dev_logging import development_trace
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models import AuditLog, Case, ChatMessage, Document, Service, User, VisitEvent
@@ -29,6 +30,12 @@ from app.services.case_receipt import render_case_receipt
 from app.services.citizen_workflow import snapshot, attach_profile_document, analyze_file
 from app.services.mock_citizens import verify_mock_profile
 from app.services.conversation_state import ConversationState, advance, load_state
+from app.services.procedure_schema import (
+    ConversationState as ProcedureConversationState,
+    ProcedureRoute,
+    detect_section,
+    suggested_questions,
+)
 
 router = APIRouter(prefix="/api", tags=["omni"])
 
@@ -199,6 +206,8 @@ def serialize_message(message: ChatMessage, index: int) -> dict:
         "language": language,
         "createdAt": message.created_at.isoformat(),
         "conversationState": message.conversation_state,
+        "procedureId": message.procedure_id,
+        "suggestedQuestions": message.suggested_questions or [],
     }
 
 
@@ -857,16 +866,62 @@ async def send_chat_message(
         .filter(ChatMessage.sender.in_(("user", "assistant")))
     )
 
+    previous_state_row = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.case_id.is_(None))
+        .filter(ChatMessage.user_id == current_user.id)
+        .filter(ChatMessage.session_id == stored_session_id)
+        .filter(ChatMessage.procedure_id.isnot(None))
+        .order_by(ChatMessage.created_at.desc())
+        .first()
+    )
+    previous_procedure_id = previous_state_row.procedure_id if previous_state_row else None
+    if not previous_procedure_id:
+        # Backfill state for conversations created before procedure_id existed.
+        for item in reversed(conversation_history):
+            if item.get("role") == "user":
+                previous_procedure_id = detect_service_id(item.get("content", ""))
+                if previous_procedure_id:
+                    break
+    previous_turn_count = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.case_id.is_(None))
+        .filter(ChatMessage.user_id == current_user.id)
+        .filter(ChatMessage.session_id == stored_session_id)
+        .filter(ChatMessage.sender == "user")
+        .count()
+    )
+    conversation_state = ProcedureConversationState(
+        current_procedure_id=previous_procedure_id,
+        turn_count=previous_turn_count,
+    )
+    route = conversation_state.resolve(body.content)
+    # Preserve all existing service routes while the data-driven alias rollout
+    # is intentionally limited to life_certificate, identity_card and
+    # single_status_certificate.
+    legacy_explicit = detect_service_id(body.content)
+    if legacy_explicit and not route.explicit_procedure_id:
+        conversation_state.current_procedure_id = legacy_explicit
+        route = ProcedureRoute(legacy_explicit, route.section, "explicit", legacy_explicit)
+
+    detected_service = route.procedure_id
+    intent_section = route.section or detect_section(body.content)
+    development_trace("CHAT", session_id=session_id)
+    development_trace("STATE BEFORE", current_procedure_id=previous_procedure_id)
+    development_trace(
+        "ROUTER",
+        detected_procedure=detected_service,
+        intent_section=intent_section,
+        resolution="none" if route.resolution == "unresolved" else route.resolution,
+    )
+
     user_msg = ChatMessage(
         case_id=None, user_id=current_user.id, session_id=stored_session_id,
         sender="user", message=body.content, language=language,
         conversation_state=state.model_dump(mode="json"),
+        procedure_id=detected_service,
     )
     db.add(user_msg)
-
-    # Detect service if keyword matches, else None (searches all services)
-    detected_service = state.current_procedure_id
-
     # ── Guardrail: detect clearly out-of-scope or gibberish input ────────────
     _MEANINGFUL_MIN_CHARS = 3
     _has_arabic = bool(re.search(r'[\u0600-\u06FF]', body.content))
@@ -926,20 +981,49 @@ async def send_chat_message(
             message=answer_text,
             language=language,
             conversation_state=state.model_dump(mode="json"),
+            procedure_id=detected_service,
+            suggested_questions=suggested_questions(detected_service, language),
         )
         db.add(assistant_msg)
         db.commit()
         db.refresh(assistant_msg)
+        development_trace(
+            "RAG",
+            backend="bm25_fallback",
+            procedure_filter=detected_service,
+            section_preference=intent_section or "none",
+            top_chunks=[],
+        )
+        development_trace(
+            "LLM",
+            provider="gemini",
+            status="fallback",
+            fallback_reason="request_guardrail",
+        )
+        development_trace(
+            "STATE AFTER",
+            current_procedure_id=detected_service,
+            turn_count=conversation_state.turn_count,
+        )
         return serialize_message(assistant_msg, _standalone_count(db, current_user.id, session_id))
 
+    rag_res = {}
     try:
         from app.rag_service import query_rag
-        rag_res = query_rag(
-            user_query=body.content,
-            service_type=detected_service,
-            conversation_history=conversation_history,
-            conversation_state=state.model_dump(mode="json"),
-        )
+        rag_kwargs = {
+            "user_query": body.content,
+            "service_type": detected_service,
+            "conversation_history": conversation_history,
+        }
+        # Keep compatibility with injected/legacy query callables while the
+        # production RAG function receives the richer conversation snapshot.
+        import inspect
+        parameters = inspect.signature(query_rag).parameters.values()
+        if "conversation_state" in inspect.signature(query_rag).parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters
+        ):
+            rag_kwargs["conversation_state"] = state.model_dump(mode="json")
+        rag_res = query_rag(**rag_kwargs)
         answer_text = rag_res.get("answer", "").strip()
         # Only fall back if RAG is explicitly offline (fallback_reason), NOT for every answer
         if not answer_text:
@@ -958,7 +1042,15 @@ async def send_chat_message(
                     "مثلاً: شهادة السكنى، عقد الازدياد، السجل العدلي، CIN..."
                 )
     except Exception as e:
-        print(f"[WARN] RAG query failed: {e}")
+        print("[WARN] RAG query failed; using local knowledge-base fallback")
+        rag_res = {
+            "backend": "bm25_fallback",
+            "procedure_id": detected_service,
+            "section": intent_section,
+            "retrieved_chunks": [],
+            "llm_status": "fallback",
+            "llm_fallback_reason": "rag_query_failed",
+        }
         if detected_service:
             answer = answer_with_metadata(
                 service_id=detected_service,
@@ -972,6 +1064,35 @@ async def send_chat_message(
                 "وقع مشكل تقني مؤقت. تقدر تسولني مباشرة على أي إجراء إداري وغادي نعاونك."
             )
 
+    trace_backend = rag_res.get("backend") or "bm25_fallback"
+    if trace_backend not in {"chroma_bge_m3", "bm25_fallback"}:
+        # Structured exact answers are a local, non-vector retrieval path.
+        trace_backend = "bm25_fallback"
+    trace_chunks = [
+        {
+            "procedure_id": chunk.get("procedure_id"),
+            "section": chunk.get("section"),
+            "similarity": chunk.get("similarity", chunk.get("score")),
+        }
+        for chunk in (rag_res.get("retrieved_chunks") or [])[:5]
+    ]
+    development_trace(
+        "RAG",
+        backend=trace_backend,
+        procedure_filter=rag_res.get("procedure_id") or detected_service,
+        section_preference=rag_res.get("section") or intent_section or "none",
+        top_chunks=trace_chunks,
+    )
+    llm_status = rag_res.get("llm_status") or (
+        "fallback" if rag_res.get("fallback_reason") else "success"
+    )
+    llm_fields = {"provider": "gemini", "status": llm_status}
+    if llm_status == "fallback":
+        llm_fields["fallback_reason"] = (
+            rag_res.get("llm_fallback_reason") or "local_retrieval_fallback"
+        )
+    development_trace("LLM", **llm_fields)
+
 
     assistant_msg = ChatMessage(
         case_id=None,
@@ -981,10 +1102,18 @@ async def send_chat_message(
         message=answer_text,
         language=language,
         conversation_state=state.model_dump(mode="json"),
+        procedure_id=detected_service,
+        suggested_questions=suggested_questions(detected_service, language),
     )
     db.add(assistant_msg)
     db.commit()
     db.refresh(assistant_msg)
+
+    development_trace(
+        "STATE AFTER",
+        current_procedure_id=detected_service,
+        turn_count=conversation_state.turn_count,
+    )
 
     result = serialize_message(assistant_msg, _standalone_count(db, current_user.id, session_id))
     result["conversationState"] = state.model_dump(mode="json")

@@ -1,0 +1,90 @@
+{
+  "life_certificate": [
+    "شهادة الحياة",
+    "شهادة حياة",
+    "certificat de vie",
+    "chahadat lhayat"
+  ],
+  "identity_card": [
+    "البطاقة الوطنية للتعريف الإلكترونية",
+    "البطاقة الوطنية",
+    "بطاقة التعريف",
+    "بطاقة التعريف الوطنية",
+    "CNIE",
+    "CIN",
+    "carte nationale",
+    "carte d'identité",
+    "carte nationale d'identité électronique",
+    "bita9a wataniya",
+    "Moroccan Electronic National Identity Card"
+  ],
+  "single_status_certificate": [
+    "شهادة العزوبة",
+    "شهادة العزوبية",
+    "certificat de célibat",
+    "certificat celibat",
+    "chahadat l3ozoba",
+    "Single Status Certificate"
+  ],
+  "residence_certificate": [
+    "شهادة السكنى",
+    "شهادة الإقامة",
+    "certificat de résidence",
+    "certificat de domicile",
+    "chahadat sokna",
+    "Residence Certificate"
+  ],
+  "birth_certificate": [
+    "عقد الازدياد",
+    "رسم الولادة",
+    "شهادة الميلاد",
+    "acte de naissance",
+    "extrait d'acte de naissance",
+    "copie intégrale de l'acte de naissance",
+    "3a9d l'izdiad",
+    "Birth Certificate"
+  ],
+  "criminal_record": [
+    "السجل العدلي",
+    "سجل عدلي",
+    "casier judiciaire",
+    "extrait du casier judiciaire",
+    "extrait de casier judiciaire",
+    "sijil 3adli",
+    "Criminal Record Certificate"
+  ],
+  "death_certificate": [
+    "مستخرج شهادة الوفاة",
+    "مستخرج رسم الوفاة",
+    "شهادة الوفاة",
+    "رسم الوفاة",
+    "extrait de certificat de décès",
+    "extrait d'acte de décès",
+    "certificat de décès",
+    "mostakhraj chahadat lwafat",
+    "Death Certificate Extract"
+  ],
+  "marriage_contract": [
+    "عقد الزواج",
+    "acte de mariage",
+    "3a9d zwaj",
+    "Marriage Contract"
+  ],
+  "good_conduct_certificate": [
+    "شهادة حسن السيرة",
+    "حسن السيرة",
+    "fiche anthropométrique",
+    "fiche anthropometrique",
+    "chahadat hosn sira",
+    "Good Conduct Certificate",
+    "Police Clearance"
+  ],
+  "non_property_certificate": [
+    "شهادة عدم الملكية",
+    "عدم الملكية",
+    "certificat de non-propriété",
+    "certificat de non propriete",
+    "chahadat 3adam lmilkiya",
+    "Non-Property Certificate"
+  ]
+}

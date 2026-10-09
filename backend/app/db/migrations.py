@@ -4,7 +4,11 @@ from sqlalchemy import inspect, text
 
 def migrate(engine):
     additions = {
-        "chat_messages": {"conversation_state": "JSON"},
+        "chat_messages": {
+            "conversation_state": "JSON",
+            "procedure_id": "VARCHAR",
+            "suggested_questions": "JSON",
+        },
         "users": {"profile_data": "JSON"},
         "cases": {"workflow_data": "JSON"},
         "documents": {"analysis": "JSON", "source_profile_document_id": "VARCHAR"},
