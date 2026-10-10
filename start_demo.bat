@@ -5,7 +5,7 @@ echo    DEMARRAGE DE LA DEMONSTRATION POC - OMNIAGENT MAROC GOV
 echo ======================================================================
 echo.
 echo [1/2] Lancement du Backend FastAPI (Port 8000)...
-start "OmniAgent Backend (FastAPI)" cmd /k "cd /d %~dp0backend && .venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload"
+start "OmniAgent Backend (FastAPI)" cmd /k "cd /d %~dp0backend && set DEBUG_LOGGING=true&& .venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload"
 
 timeout /t 3 /nobreak > nul
 

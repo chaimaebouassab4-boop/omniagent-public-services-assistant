@@ -13,6 +13,8 @@ export interface ChatMessage {
   fallbackReason?: string;
   conversationState?: ConversationState | null;
   chunks?: { content: string; metadata: Record<string, unknown>; similarity_score: number }[];
+  procedureId?: string | null;
+  suggestedQuestions?: string[];
 }
 
 export interface ConversationState {

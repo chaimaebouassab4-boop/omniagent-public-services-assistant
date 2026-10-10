@@ -1,5 +1,7 @@
 # FAQ - مستخرج شهادة الوفاة
 
+<!-- Compatibility mirror. Canonical structured content: death_certificate_extract.json -->
+
 **محدث: مارس 2026**
 
 1. **كم الأجل للتصريح بالوفاة؟**  

@@ -10,6 +10,7 @@ Architecture:
   - Direct Answer Prompting via Gemini Flash
 """
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -19,6 +20,15 @@ from typing import Any, Optional, List, Dict, Sequence
 from dotenv import load_dotenv
 
 from app.services.gemini_client import GeminiRequestError, generate_text
+from app.services.procedure_schema import (
+    build_retrieval_query,
+    detect_explicit_procedure,
+    detect_section,
+    generate_procedure_chunks,
+    iter_normalized_procedures,
+    load_normalized_procedure,
+    procedure_path,
+)
 
 # Resolve project paths
 THIS_FILE = Path(__file__).resolve()
@@ -26,6 +36,9 @@ THIS_FILE = Path(__file__).resolve()
 ROOT_DIR = THIS_FILE.parents[2]
 KNOWLEDGE_DIR = ROOT_DIR / "tests" / "knowledge_base"
 EXCLUDED_KB_NAMES = {"test_cases.json", "all_test_cases.json"}
+CHROMA_DIR = ROOT_DIR / "chroma_db"
+CHROMA_COLLECTION = "public_services_kb"
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env if present (root and backend)
 load_dotenv(ROOT_DIR / ".env")
@@ -132,10 +145,11 @@ def _format_conversation_history(
     """Render a small conversation window for context."""
     if not history:
         return ""
-    labels = {"user": "المواطن", "assistant": "المساعد"}
+    labels = {"user": "User", "assistant": "Assistant"}
     lines: List[str] = []
-    # Take only the last 3 turns
-    for item in history[-3:]:
+    # Five exchanges are enough for generation continuity. Retrieval itself
+    # intentionally uses only the current message plus resolved procedure.
+    for item in history[-10:]:
         role = labels.get(item.get("role", ""), "المواطن")
         content = item.get("content", "").strip()
         if content and "ما متأكدش" not in content:
@@ -255,6 +269,9 @@ _SERVICE_KEYWORDS: Dict[str, List[str]] = {
 
 def _detect_service_from_query(user_query: str) -> Optional[str]:
     """Auto-detect the service type from keywords in the user's question."""
+    configured = detect_explicit_procedure(user_query)
+    if configured:
+        return configured
     query_lower = user_query.lower()
     for service_id, keywords in _SERVICE_KEYWORDS.items():
         for kw in keywords:
@@ -265,145 +282,12 @@ def _detect_service_from_query(user_query: str) -> Optional[str]:
 
 # ─── BM25 Node Loading ──────────────────────────────────────────────────────
 def _load_kb_nodes() -> List[KBNode]:
-    """Load knowledge base files into granular KBNode objects for BM25.
-
-    Creates fine-grained nodes (one per FAQ entry, one per structured field)
-    so BM25 keyword matching can pinpoint exact answers.
-    """
-    nodes: List[KBNode] = []
-
-    for path in sorted(KNOWLEDGE_DIR.rglob("*")):
-        if not path.is_file() or path.suffix.lower() not in {".json", ".md"}:
-            continue
-        if path.name in EXCLUDED_KB_NAMES or "test_cases.json" in path.parts:
-            continue
-
-        relative = path.relative_to(KNOWLEDGE_DIR)
-        service_type = relative.parts[0] if len(relative.parts) > 1 else "common"
-        base_meta = {
-            "service_type": service_type,
-            "file_name": path.name,
-            "file_path": str(path),
-        }
-
-        # ── JSON Knowledge Files ──
-        if path.suffix.lower() == ".json":
-            try:
-                with path.open("r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                text = path.read_text(encoding="utf-8", errors="replace")
-                nodes.append(KBNode(
-                    text=text,
-                    metadata={**base_meta, "node_type": "raw"},
-                ))
-                continue
-
-            svc_name = data.get("service_name_ar", service_type)
-
-            # One node per FAQ entry (granular -- best for BM25)
-            for faq in data.get("faq", []):
-                q = faq.get("question", "")
-                a = faq.get("answer", "")
-                if q and a:
-                    nodes.append(KBNode(
-                        text=f"سؤال: {q}\nجواب: {a}",
-                        metadata={**base_meta, "node_type": "faq"},
-                    ))
-
-            # One node per common scalar field.
-            indexed_fields = {
-                "description", "fees", "validity_period", "note",
-            }
-            for field_key in indexed_fields:
-                value = data.get(field_key)
-                if value and isinstance(value, str):
-                    nodes.append(KBNode(
-                        text=f"{svc_name} - {field_key}: {value}",
-                        metadata={**base_meta, "node_type": field_key},
-                    ))
-
-            # Nodes from required_documents
-            req_docs = data.get("required_documents")
-            if isinstance(req_docs, list) and req_docs:
-                docs_text = "\n".join(f"- {d}" for d in req_docs)
-                nodes.append(KBNode(
-                    text=f"الوثائق المطلوبة لـ{svc_name}:\n{docs_text}",
-                    metadata={**base_meta, "node_type": "required_documents"},
-                ))
-            elif isinstance(req_docs, dict):
-                for cat, doc_list in req_docs.items():
-                    if isinstance(doc_list, list) and doc_list:
-                        docs_text = "\n".join(f"- {d}" for d in doc_list)
-                        nodes.append(KBNode(
-                            text=f"الوثائق المطلوبة لـ{svc_name} ({cat}):\n{docs_text}",
-                            metadata={**base_meta, "node_type": "required_documents"},
-                        ))
-
-            # Nodes from general_steps
-            steps = data.get("general_steps")
-            if isinstance(steps, list) and steps:
-                steps_text = "\n".join(f"{i+1}. {s}" for i, s in enumerate(steps))
-                nodes.append(KBNode(
-                    text=f"خطوات {svc_name}:\n{steps_text}",
-                    metadata={**base_meta, "node_type": "general_steps"},
-                ))
-            elif isinstance(steps, dict):
-                for cat, step_list in steps.items():
-                    if isinstance(step_list, list) and step_list:
-                        steps_text = "\n".join(
-                            f"{i+1}. {s}" for i, s in enumerate(step_list)
-                        )
-                        nodes.append(KBNode(
-                            text=f"خطوات {svc_name} ({cat}):\n{steps_text}",
-                            metadata={**base_meta, "node_type": "general_steps"},
-                        ))
-
-            # Index every remaining structured field instead of silently
-            # dropping parts of the knowledge base.  This keeps the Railway
-            # friendly BM25 implementation complete without loading Chroma,
-            # LlamaIndex or a transformer model into the 512 MB container.
-            handled_fields = {
-                "service_name_ar", "service_name_fr", "service_name_en",
-                "faq", "required_documents", "general_steps", *indexed_fields,
-            }
-            for field_key, value in data.items():
-                if field_key in handled_fields or value in (None, "", [], {}):
-                    continue
-
-                sections: List[tuple[str, Any]] = []
-                if isinstance(value, dict):
-                    sections.extend((f"{field_key}.{key}", item) for key, item in value.items())
-                else:
-                    sections.append((field_key, value))
-
-                for section_key, section_value in sections:
-                    if isinstance(section_value, list):
-                        section_text = "\n".join(
-                            f"- {item}" if not isinstance(item, (dict, list))
-                            else f"- {json.dumps(item, ensure_ascii=False)}"
-                            for item in section_value
-                        )
-                    elif isinstance(section_value, dict):
-                        section_text = json.dumps(section_value, ensure_ascii=False)
-                    else:
-                        section_text = str(section_value)
-                    if section_text.strip():
-                        nodes.append(KBNode(
-                            text=f"{svc_name} - {section_key}:\n{section_text}",
-                            metadata={**base_meta, "node_type": field_key},
-                        ))
-
-        # ── Markdown Files ──
-        else:
-            text = path.read_text(encoding="utf-8", errors="replace")
-            if text.strip():
-                nodes.append(KBNode(
-                    text=text,
-                    metadata={**base_meta, "node_type": "markdown"},
-                ))
-
-    return nodes
+    """Load the same normalized section chunks used by Chroma into BM25."""
+    return [
+        KBNode(text=chunk.text, metadata=dict(chunk.metadata))
+        for procedure, path in iter_normalized_procedures()
+        for chunk in generate_procedure_chunks(procedure, path)
+    ]
 
 
 # ─── Arabic Tokenizer for BM25 ──────────────────────────────────────────────
@@ -413,8 +297,9 @@ def _tokenize_arabic(text: str) -> List[str]:
     Splits on whitespace and punctuation, lowercases Latin chars,
     and removes very short tokens.
     """
-    # Split on whitespace and common punctuation
-    tokens = re.findall(r"[\w\u0600-\u06FF\u0750-\u077F]+", text, re.UNICODE)
+    # Unicode word characters without underscore; unlike the previous broad
+    # Arabic block range this excludes Arabic punctuation such as "؟" and "،".
+    tokens = re.findall(r"[^\W_]+", text, re.UNICODE)
     return [t.lower() if t.isascii() else t for t in tokens if len(t) > 1]
 
 
@@ -447,20 +332,37 @@ def _create_gemini_model():
     return api_key, model_name
 
 
-def _llm_generate(model_config, prompt: str) -> str:
+def _llm_generate(
+    model_config,
+    prompt: str,
+    diagnostics: Optional[Dict[str, str]] = None,
+) -> str:
     """Call Gemini generate_content and return text. Returns '' on failure."""
     if model_config is None:
+        if diagnostics is not None:
+            diagnostics.update(status="fallback", fallback_reason="gemini_not_configured")
         return ""
     api_key, model_name = model_config
     try:
-        return generate_text(
+        result = generate_text(
             api_key=api_key,
             model=model_name,
             contents=prompt,
             temperature=0.1,
         )
+        if diagnostics is not None:
+            if result:
+                diagnostics.update(status="success")
+                diagnostics.pop("fallback_reason", None)
+            else:
+                diagnostics.update(status="fallback", fallback_reason="gemini_empty_response")
+        return result
     except GeminiRequestError as exc:
-        print(f"[WARN] Gemini generate failed; using local retrieval fallback: {exc}")
+        reason = getattr(exc, "reason", "gemini_request_failed")
+        if reason == "gemini_request_failed" and _is_rate_limit_error(exc):
+            reason = "gemini_rate_limited_http_429"
+        if diagnostics is not None:
+            diagnostics.update(status="fallback", fallback_reason=reason)
         return ""
 
 
@@ -468,7 +370,7 @@ def _llm_generate(model_config, prompt: str) -> str:
 # Main RAG Engine
 # ═════════════════════════════════════════════════════════════════════════════
 class OmniAgentRAG:
-    """Reusable RAG engine with BM25 retrieval and Gemini synthesis."""
+    """Procedure-aware Chroma/BGE-M3 RAG with a local BM25 fallback."""
 
     def __init__(
         self,
@@ -476,8 +378,12 @@ class OmniAgentRAG:
         gemini_model: Optional[str] = None,
     ):
         self.initialized = False
+        self.vector_retriever = False
         self.bm25_retriever = False
         self._gemini = None
+        self._chroma_client = None
+        self._chroma_collection = None
+        self._embedding_model = None
         self._bm25_nodes: List[KBNode] = []
         self._bm25_index = None
         self._rewrite_cache: Dict[str, str] = {}
@@ -493,7 +399,7 @@ class OmniAgentRAG:
 
     # ─── Initialization ──────────────────────────────────────────────────
     def _init_rag(self) -> None:
-        """Initialize BM25 retriever and Gemini LLM."""
+        """Initialize Chroma metadata, BM25 fallback, and Gemini."""
         try:
             # ── 1. Gemini LLM ──
             self._gemini = _create_gemini_model()
@@ -507,7 +413,21 @@ class OmniAgentRAG:
                     print(f"[WARN] Vector retrieval unavailable: {exc}")
                 return
 
-            # ── 2. BM25 Retriever (Fast, lightweight ~5MB, ultra-reliable) ──
+            # ── 2. Chroma collection (BGE-M3 model loads lazily) ──
+            try:
+                import chromadb
+
+                if CHROMA_DIR.exists():
+                    self._chroma_client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+                    self._chroma_collection = self._chroma_client.get_collection(CHROMA_COLLECTION)
+                    if self._chroma_collection.count() > 0:
+                        self.vector_retriever = True
+                        self.initialized = True
+                        print(f"[OK] Chroma retriever ready: {CHROMA_COLLECTION} ({self._chroma_collection.count()} chunks).")
+            except Exception as chroma_err:
+                print(f"[WARN] Chroma unavailable; BM25 fallback remains active: {chroma_err}")
+
+            # ── 3. BM25 fallback (also useful in constrained deployments) ──
             try:
                 from rank_bm25 import BM25Okapi
 
@@ -528,8 +448,62 @@ class OmniAgentRAG:
             print(f"[WARN] RAG initialization error: {e}")
             self.initialized = False
 
+    def _retrieve_chroma(
+        self,
+        retrieval_query: str,
+        procedure_id: str | None,
+        section: str | None,
+        limit: int = 8,
+    ) -> List[ScoredNode]:
+        """Retrieve with a strict procedure filter and a soft section boost."""
+        if not getattr(self, "vector_retriever", False) or getattr(self, "_chroma_collection", None) is None:
+            return []
+        try:
+            if self._embedding_model is None:
+                from sentence_transformers import SentenceTransformer
+                from huggingface_hub import snapshot_download
+
+                model_name = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+                # Retrieval must not make a network request on every process
+                # start. Deployments without the cached model fall back to
+                # BM25 until the documented index/model setup is completed.
+                local_model_path = snapshot_download(
+                    repo_id=model_name,
+                    local_files_only=True,
+                )
+                self._embedding_model = SentenceTransformer(local_model_path, local_files_only=True)
+            embedding = self._embedding_model.encode(
+                [retrieval_query], normalize_embeddings=True, show_progress_bar=False
+            )[0].tolist()
+            kwargs: Dict[str, Any] = {
+                "query_embeddings": [embedding],
+                "n_results": limit,
+                "include": ["documents", "metadatas", "distances"],
+            }
+            if procedure_id:
+                kwargs["where"] = {"procedure_id": procedure_id}
+            result = self._chroma_collection.query(**kwargs)
+            documents = (result.get("documents") or [[]])[0]
+            metadatas = (result.get("metadatas") or [[]])[0]
+            distances = (result.get("distances") or [[]])[0]
+            ranked: list[tuple[float, ScoredNode]] = []
+            for document, metadata, distance in zip(documents, metadatas, distances):
+                meta = dict(metadata or {})
+                similarity = max(-1.0, min(1.0, 1.0 - float(distance)))
+                preference = 0.08 if section and meta.get("section") == section else 0.0
+                ranked.append((similarity + preference, ScoredNode(KBNode(document or "", meta), similarity)))
+            ranked.sort(key=lambda item: item[0], reverse=True)
+            return [item[1] for item in ranked[:5]]
+        except Exception as error:
+            logger.warning("[RAG] Chroma retrieval failed; using BM25 fallback: %s", error)
+            return []
+
     # ─── Query Rewriting (Darija/French -> MSA) ───────────────────────────
-    def _rewrite_query(self, user_query: str) -> str:
+    def _rewrite_query(
+        self,
+        user_query: str,
+        diagnostics: Optional[Dict[str, str]] = None,
+    ) -> str:
         """Rewrite Darija/French query to formal Arabic for better retrieval.
 
         Uses the configured LLM (Gemini Flash) to normalize the query.
@@ -540,12 +514,15 @@ class OmniAgentRAG:
             return user_query  # Already formal Arabic
 
         # Check cache
-        if user_query in self._rewrite_cache:
-            return self._rewrite_cache[user_query]
+        rewrite_cache = getattr(self, "_rewrite_cache", None)
+        if rewrite_cache is None:
+            rewrite_cache = self._rewrite_cache = {}
+        if user_query in rewrite_cache:
+            return rewrite_cache[user_query]
 
         try:
             prompt = REWRITE_PROMPT.replace("{query}", user_query)
-            rewritten = _llm_generate(self._gemini, prompt)
+            rewritten = _llm_generate(self._gemini, prompt, diagnostics)
 
             # Sanity check -- rewritten should contain Arabic characters
             if re.search(r"[\u0600-\u06FF]", rewritten) and len(rewritten) > 3:
@@ -554,16 +531,12 @@ class OmniAgentRAG:
                     if rewritten.startswith(prefix):
                         rewritten = rewritten[len(prefix):].strip()
 
-                self._rewrite_cache[user_query] = rewritten
-                print(
-                    f"[REWRITE] '{user_query[:50]}' -> "
-                    f"'{rewritten[:50]}'"
-                )
+                rewrite_cache[user_query] = rewritten
                 return rewritten
             else:
                 return user_query
-        except Exception as e:
-            print(f"[WARN] Query rewrite failed: {e}")
+        except Exception:
+            logger.exception("Unexpected query rewrite failure")
             return user_query
 
     # ─── Main Query Method ───────────────────────────────────────────────
@@ -573,13 +546,13 @@ class OmniAgentRAG:
         service_type: Optional[str] = None,
         conversation_history: Optional[Sequence[ConversationMessage]] = None,
     ) -> Dict[str, Any]:
-        """Query RAG pipeline with BM25 search and Gemini synthesis.
+        """Query the configured vector or procedure-aware local retrieval pipeline.
 
         Flow:
-          1. Detect language -> auto-detect service type
-          2. Rewrite query (Darija/French -> MSA) for better retrieval
-          3. BM25 keyword search with original + rewritten query
-          4. Generate answer with the improved direct-answer prompt via Gemini
+          1. Use the configured Chroma retriever when requested.
+          2. Otherwise resolve the procedure and preferred section.
+          3. Retrieve with Chroma/BGE-M3 or the BM25 fallback.
+          4. Synthesize with Gemini when available.
         """
         if getattr(self, "backend", "bm25") == "chroma":
             return self._query_vector(user_query, service_type, conversation_history)
@@ -588,64 +561,124 @@ class OmniAgentRAG:
                 user_query, service_type, reason="RAG engine offline"
             )
 
-        # Step 1: Detect language and auto-detect service
+        # Compatibility for older in-process callers that injected a
+        # LlamaIndex object directly. The production path never sets `index`.
+        legacy_index = getattr(self, "index", None)
+        if legacy_index is not None and not hasattr(self, "_bm25_index"):
+            try:
+                query_engine = legacy_index.as_query_engine(
+                    similarity_top_k=5,
+                    text_qa_template=getattr(self, "qa_prompt", None),
+                )
+                response = query_engine.query(user_query)
+                return {
+                    "answer": str(response), "sources": [], "confidence": 0.7,
+                    "language": _detect_language(user_query),
+                    "llm_status": "success",
+                }
+            except Exception as error:
+                if _is_rate_limit_error(error):
+                    return self._fallback_query(
+                        user_query,
+                        service_type,
+                        reason="Gemini rate limited (HTTP 429)",
+                    )
+                return self._fallback_query(user_query, service_type, reason=str(error))
+
         detected_lang = _detect_language(user_query)
         resolved_service = service_type or _detect_service_from_query(user_query)
+        section = detect_section(user_query)
+        retrieval_query = build_retrieval_query(user_query, resolved_service, section)
+
+        # Curated exact FAQs remain authoritative and avoid a generative model
+        # paraphrasing a verified answer into a different procedure variant.
+        if resolved_service:
+            normalized_question = user_query.casefold().strip().rstrip("?؟.! ")
+            procedure = load_normalized_procedure(resolved_service)
+            for faq in procedure.get("faq") or []:
+                stored_question = str(faq.get("question", ""))
+                if stored_question.casefold().strip().rstrip("?؟.! ") == normalized_question:
+                    path = procedure_path(resolved_service)
+                    source = (
+                        str(path.relative_to(KNOWLEDGE_DIR)).replace("\\", "/")
+                        if path else resolved_service
+                    )
+                    chunk = {"procedure_id": resolved_service, "section": "faq", "score": 1.0}
+                    logger.info(
+                        "[RAG] backend=structured_exact_faq procedure_filter=%s "
+                        "section_preference=%s top_chunks=%s",
+                        resolved_service,
+                        section,
+                        [chunk],
+                    )
+                    return {
+                        "answer": str(faq.get("answer", "")),
+                        "sources": [source],
+                        "confidence": 0.95,
+                        "language": detected_lang,
+                        "backend": "structured_exact_faq",
+                        "procedure_id": resolved_service,
+                        "section": "faq",
+                        "retrieval_query": retrieval_query,
+                        "retrieved_chunks": [chunk],
+                        "llm_status": "fallback",
+                        "llm_fallback_reason": "structured_exact_faq",
+                    }
 
         try:
-            # Step 2: Rewrite query to MSA for better retrieval
-            rewritten_query = self._rewrite_query(user_query)
-
-            # Step 3: BM25 retrieval
-            clean_service = None
-            if resolved_service:
-                clean_service = _normalize_service_filter(resolved_service)
-
+            llm_diagnostics: Dict[str, str] = {}
+            vector_nodes = self._retrieve_chroma(
+                retrieval_query=retrieval_query,
+                procedure_id=resolved_service,
+                section=section,
+            )
+            backend = "chroma_bge_m3" if vector_nodes else "bm25_fallback"
+            rewritten_query = user_query
             bm25_nodes: List[ScoredNode] = []
-            if self.bm25_retriever and self._bm25_index is not None:
+            if not vector_nodes and self.bm25_retriever and self._bm25_index is not None:
                 try:
-                    # Search with both the user's wording and the normalized
-                    # Arabic rewrite.  Previously the rewrite was computed but
-                    # never used, which especially hurt French/Darija queries.
-                    query_tokens = _tokenize_arabic(user_query)
+                    # Query rewriting only benefits lexical BM25 retrieval.
+                    # BGE-M3 embeds the multilingual retrieval query directly.
+                    rewritten_query = self._rewrite_query(
+                        user_query, llm_diagnostics
+                    )
+                    query_tokens = _tokenize_arabic(retrieval_query)
                     if rewritten_query != user_query:
                         query_tokens.extend(_tokenize_arabic(rewritten_query))
                     scores = self._bm25_index.get_scores(query_tokens)
-
-                    # Apply a known service filter before taking the top hits.
-                    # Filtering only the global top-10 could discard every
-                    # relevant node for a smaller service collection.
                     indexed_scores = list(enumerate(scores))
                     service_scores = indexed_scores
-                    if clean_service:
+                    if resolved_service:
                         service_scores = [
                             item for item in indexed_scores
-                            if self._bm25_nodes[item[0]].metadata.get("service_type", "")
-                            == clean_service
+                            if self._bm25_nodes[item[0]].metadata.get("procedure_id") == resolved_service
                         ]
-                        if not service_scores:
-                            service_scores = indexed_scores
-                    service_scores.sort(key=lambda x: x[1], reverse=True)
+                    max_score = max((float(item[1]) for item in service_scores), default=0.0)
+                    # Strong enough to surface the intended section for terse
+                    # follow-ups, while still keeping other procedure sections
+                    # available as semantic fallbacks.
+                    section_boost = max(0.75, abs(max_score) * 0.50)
+                    service_scores.sort(
+                        key=lambda item: float(item[1]) + (
+                            section_boost
+                            if section and self._bm25_nodes[item[0]].metadata.get("section") == section
+                            else 0.0
+                        ),
+                        reverse=True,
+                    )
                     top_indices = service_scores[:10]
-
-                    raw_bm25: List[ScoredNode] = []
                     for idx, score in top_indices:
-                        if score > 0:
-                            raw_bm25.append(ScoredNode(
-                                node=self._bm25_nodes[idx],
-                                score=float(score),
-                            ))
-
-                    bm25_nodes = raw_bm25[:5]
+                        preferred_section = (
+                            section
+                            and self._bm25_nodes[idx].metadata.get("section") == section
+                        )
+                        if score > 0 or preferred_section:
+                            bm25_nodes.append(ScoredNode(self._bm25_nodes[idx], float(score)))
+                    bm25_nodes = bm25_nodes[:5]
                 except Exception as bm25_err:
                     print(f"[WARN] BM25 retrieval failed: {bm25_err}")
 
-            combined = bm25_nodes[:5]
-
-            # A positive BM25 score alone is not enough: a generic word can
-            # otherwise make an unrelated question look highly confident.
-            # Require a meaningful fraction of the original question to be
-            # present in the retrieved context before sending it to Gemini.
+            combined = vector_nodes or bm25_nodes
             original_tokens = set(_tokenize_arabic(user_query))
             retrieved_tokens = {
                 token
@@ -656,14 +689,16 @@ class OmniAgentRAG:
                 len(original_tokens & retrieved_tokens) / len(original_tokens)
                 if original_tokens else 0.0
             )
-            if lexical_coverage < 0.25:
+            if not vector_nodes and lexical_coverage < 0.25:
+                fallback_reason = llm_diagnostics.get("fallback_reason") or (
+                    "Retrieved context has insufficient lexical coverage"
+                )
                 return self._fallback_query(
                     user_query,
-                    service_type,
-                    reason="Retrieved context has insufficient lexical coverage",
+                    resolved_service,
+                    reason=fallback_reason,
                 )
 
-            # Step 4: Build context from retrieved nodes
             context_parts = [
                 node.node.text
                 for node in combined
@@ -672,32 +707,39 @@ class OmniAgentRAG:
             context = "\n\n---\n\n".join(context_parts)
 
             if not context.strip():
+                fallback_reason = llm_diagnostics.get("fallback_reason") or (
+                    "No relevant context found after procedure-aware search"
+                )
                 return self._fallback_query(
                     user_query,
-                    service_type,
-                    reason="No relevant context found after BM25 search",
+                    resolved_service,
+                    reason=fallback_reason,
                 )
 
-            # Step 5: Format prompt with conversation history
             prompt_tmpl = _prompt_with_history(conversation_history)
             prompt = prompt_tmpl.replace(
                 "{context_str}", context
             ).replace("{query_str}", user_query)
-
-            # Step 6: Call Gemini to generate answer
-            answer_text = _llm_generate(self._gemini, prompt)
+            provider_unavailable = llm_diagnostics.get("fallback_reason") in {
+                "gemini_rate_limited_http_429",
+                "gemini_service_unavailable_http_503",
+                "gemini_provider_server_error",
+            }
+            answer_text = (
+                ""
+                if provider_unavailable
+                else _llm_generate(self._gemini, prompt, llm_diagnostics)
+            )
 
             if not answer_text:
-                # LLM failed -- return the curated FAQ answer when the best
-                # hit is an FAQ, not the internal "question/answer" wrapper.
                 answer_text = context_parts[0] if context_parts else ""
-                if combined and combined[0].node.metadata.get("node_type") == "faq":
+                if combined and combined[0].node.metadata.get("section") == "faq":
                     _, separator, faq_answer = answer_text.partition("جواب:")
                     if separator and faq_answer.strip():
                         answer_text = faq_answer.strip()
 
-            # Step 7: Extract metadata from retrieved nodes
             sources: List[str] = []
+            retrieved_chunks: List[Dict[str, Any]] = []
             for scored_node in combined:
                 meta = scored_node.node.metadata
                 fp = meta.get("file_path", "") or meta.get("file_name", "")
@@ -706,20 +748,32 @@ class OmniAgentRAG:
                     try:
                         rel_path = str(path.relative_to(KNOWLEDGE_DIR)).replace("\\", "/")
                     except ValueError:
-                        rel_path = path.name
+                        rel_path = str(fp).replace("\\", "/")
                     if rel_path not in sources:
                         sources.append(rel_path)
+                retrieved_chunks.append({
+                    "procedure_id": meta.get("procedure_id"),
+                    "section": meta.get("section") or meta.get("node_type"),
+                    "score": round(float(scored_node.score), 4),
+                })
 
-            # Calculate confidence
+            logger.info(
+                "[RAG] backend=%s procedure_filter=%s section_preference=%s top_chunks=%s",
+                backend,
+                resolved_service,
+                section,
+                retrieved_chunks,
+            )
+
             n_results = len(combined)
-            n_bm25_hits = len(bm25_nodes)
             if n_results > 0:
-                base = 0.55 + (0.25 * lexical_coverage)
+                if vector_nodes:
+                    top_similarity = max(0.0, min(1.0, float(vector_nodes[0].score)))
+                    base = 0.50 + (0.35 * top_similarity)
+                else:
+                    base = 0.55 + (0.25 * lexical_coverage)
                 source_boost = min(0.10, 0.02 * len(sources))
-                bm25_boost = 0.05 if n_bm25_hits > 0 else 0.0
-                confidence = round(
-                    min(0.98, base + source_boost + bm25_boost), 2
-                )
+                confidence = round(min(0.98, base + source_boost), 2)
             else:
                 confidence = 0.50
 
@@ -730,6 +784,15 @@ class OmniAgentRAG:
             ]
             if any(marker in answer_text for marker in uncertainty_markers):
                 confidence = 0.30
+            if (
+                vector_nodes
+                and _detect_service_from_query(user_query) is None
+                and lexical_coverage < 0.25
+            ):
+                # The procedure came from conversation state, but the current
+                # turn has neither a recognizable administrative intent nor
+                # lexical support in the retrieved evidence.
+                confidence = min(confidence, 0.50)
 
             return {
                 "answer": answer_text,
@@ -740,21 +803,24 @@ class OmniAgentRAG:
                 ),
                 "confidence": confidence,
                 "language": detected_lang,
+                "backend": backend,
+                "procedure_id": resolved_service,
+                "section": section,
+                "retrieval_query": retrieval_query,
+                "retrieved_chunks": retrieved_chunks,
+                "llm_status": llm_diagnostics.get("status", "fallback"),
+                "llm_fallback_reason": llm_diagnostics.get("fallback_reason"),
             }
 
         except Exception as e:
             if _is_rate_limit_error(e):
-                print(
-                    "[WARN] Gemini rate limited (HTTP 429); using local KB fallback"
-                )
                 return self._fallback_query(
-                    user_query,
-                    service_type,
+                    user_query, resolved_service,
                     reason="Gemini rate limited (HTTP 429)",
                 )
-            print(f"[WARN] RAG query error: {e}")
+            logger.exception("Unexpected RAG query failure")
             return self._fallback_query(
-                user_query, service_type, reason=str(e)
+                user_query, resolved_service, reason=str(e)
             )
 
     def _query_vector(self, user_query, service_type, conversation_history):
@@ -797,6 +863,17 @@ class OmniAgentRAG:
         reason: str,
     ) -> Dict[str, Any]:
         """Fallback to local structured Knowledge Base if RAG is unavailable."""
+        safe_reason = (
+            "gemini_rate_limited_http_429"
+            if "429" in reason or "rate limit" in reason.lower()
+            else "gemini_service_unavailable_http_503"
+            if "503" in reason or "service_unavailable" in reason.lower()
+            else "rag_fallback"
+        )
+        llm_diagnostics: Dict[str, str] = {
+            "status": "fallback",
+            "fallback_reason": safe_reason,
+        }
         try:
             from app.services.knowledge_base import answer_with_metadata
 
@@ -818,6 +895,12 @@ class OmniAgentRAG:
                     "confidence": 0.0,
                     "language": "darija",
                     "fallback_reason": reason,
+                    "backend": "bm25_fallback",
+                    "procedure_id": None,
+                    "section": detect_section(user_query),
+                    "retrieved_chunks": [],
+                    "llm_status": "fallback",
+                    "llm_fallback_reason": safe_reason,
                 }
 
             kb_ans = answer_with_metadata(
@@ -827,7 +910,14 @@ class OmniAgentRAG:
 
             # Polish with Gemini if available
             try:
-                if self._gemini and kb_ans.answer:
+                if (
+                    self._gemini
+                    and kb_ans.answer
+                    and safe_reason not in {
+                        "gemini_rate_limited_http_429",
+                        "gemini_service_unavailable_http_503",
+                    }
+                ):
                     lang = _detect_language(user_query)
                     lang_inst = "en français" if lang == "french" else "بالدارجة المغربية"
                     prompt = (
@@ -836,7 +926,7 @@ class OmniAgentRAG:
                         f"Question : {user_query}\n"
                         f"Réponds de manière claire, structurée et chaleureuse {lang_inst} :"
                     )
-                    polished = _llm_generate(self._gemini, prompt)
+                    polished = _llm_generate(self._gemini, prompt, llm_diagnostics)
                     if polished:
                         answer_text = polished
             except Exception:
@@ -848,6 +938,12 @@ class OmniAgentRAG:
                 "confidence": kb_ans.confidence,
                 "language": "darija",
                 "fallback_reason": reason,
+                "backend": "bm25_fallback",
+                "procedure_id": resolved_service,
+                "section": detect_section(user_query),
+                "retrieved_chunks": [],
+                "llm_status": llm_diagnostics.get("status", "fallback"),
+                "llm_fallback_reason": llm_diagnostics.get("fallback_reason"),
             }
         except Exception as fallback_err:
             return {
@@ -858,6 +954,12 @@ class OmniAgentRAG:
                 "fallback_reason": (
                     f"{reason}; Fallback error: {fallback_err}"
                 ),
+                "backend": "bm25_fallback",
+                "procedure_id": service_type,
+                "section": detect_section(user_query),
+                "retrieved_chunks": [],
+                "llm_status": "fallback",
+                "llm_fallback_reason": "rag_fallback_error",
             }
 
 

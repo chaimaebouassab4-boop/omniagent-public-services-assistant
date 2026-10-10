@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
-KB_DIR = Path(r"c:\Users\21263\OneDrive\Desktop\omnia.agent\omniagent-public-services-assistant\tests\knowledge_base")
+KB_DIR = Path(__file__).resolve().parent
 
 folders = [
     "administrative",
@@ -40,10 +40,11 @@ for folder in folders:
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
             
-        service_name = data.get("service_name_ar", "الخدمة")
+        service_name = data.get("title_ar") or data.get("service_name_ar", "الخدمة")
         faq_list = data.get("faq", [])
         
         md_content = f"# FAQ - {service_name}\n\n"
+        md_content += f"<!-- Compatibility mirror. Canonical structured content: {json_path.name} -->\n\n"
         md_content += "**محدث: مارس 2026**\n\n"
         
         for i, item in enumerate(faq_list, start=1):

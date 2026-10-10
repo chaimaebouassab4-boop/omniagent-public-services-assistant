@@ -1,13 +1,15 @@
-"""Smart Document Analyzer — OCR + LLM Analysis Module
+"""Smart Document Analyzer — local OCR/rules with optional Gemini assistance.
 =======================================================
 
 Pipeline:
     1. MIME detection (PDF / Image)
-    2. Text extraction:
+    2. Local text extraction:
         a) PDF with selectable text  → pypdf (fast path)
-        b) Scanned PDF / image        → Gemini Vision multimodal (OCR path)
-        c) Fallback                   → "Could not extract text" message
-    3. LLM analysis prompt →
+        b) Scanned PDF / image       → Tesseract ara+fra+eng when installed
+        c) Conservative preprocessing → orientation, resize, contrast, denoise
+    3. Deterministic classification and schema-based field extraction
+    4. Gemini is used only when local evidence is insufficient
+    5. Optional conversational analysis prompt →
         • Detected document type (CIN, birth certificate, electricity bill…)
         • Key entities extracted (name, date, address, CIN number…)
         • Validity check (< 3 months old?  Stamp present?  Arabic/French?)
@@ -22,15 +24,14 @@ from __future__ import annotations
 from datetime import datetime
 import io
 import json
-import logging
+import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Any
 
+from app.core.config import settings
+from app.core.dev_logging import development_trace
 from app.services.gemini_client import GeminiRequestError, binary_part, generate_text
-
-
-logger = logging.getLogger(__name__)
 
 
 # ─── Moroccan Document Analysis Prompts (3 languages) ────────────────────────
@@ -178,6 +179,11 @@ DOCUMENT_TYPE_LABELS: dict[str, dict[str, str]] = {
         "ar": "وثيقة غير إدارية أو غير ملائمة",
         "darija": "الصورة ماشي وثيقة إدارية رسمية",
     },
+    "unknown": {
+        "fr": "Type de document inconnu",
+        "ar": "نوع الوثيقة غير معروف",
+        "darija": "نوع الوثيقة ما معروفش",
+    },
 }
 
 
@@ -190,6 +196,21 @@ class DocumentAnalysis:
     llm_analysis: str = ""
     is_image: bool = False
     error: Optional[str] = None
+    ocr_backend: str = "none"
+    ocr_confidence: float = 0.0
+    gemini_vision_status: str = "unavailable"
+    gemini_structured_status: str = "unavailable"
+
+
+@dataclass
+class LocalOcrResult:
+    """PII-free operational result from a local OCR attempt."""
+
+    text: str = ""
+    confidence: float = 0.0
+    backend: str = "tesseract"
+    status: str = "unavailable"
+    languages: tuple[str, ...] = ()
 
 
 @dataclass
@@ -205,7 +226,14 @@ class ExtractedDocumentMetadata:
     address: Optional[str] = None
     expiry_date: Optional[str] = None
     issuing_authority: Optional[str] = None
-    confidence_score: float = 0.85
+    confidence_score: float = 0.0
+    ocr_confidence: float = 0.0
+    classification_confidence: float = 0.0
+    extraction_confidence: float = 0.0
+    classification_source: str = "local_rules"
+    ocr_backend: str = "none"
+    field_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
+    document_indicators: list[str] = field(default_factory=list)
     is_valid: bool = True
     is_expired: bool = False
     is_blurry: bool = False
@@ -233,6 +261,13 @@ class ExtractedDocumentMetadata:
             "expiry_date": self.expiry_date,
             "issuing_authority": self.issuing_authority,
             "confidence_score": round(self.confidence_score, 2),
+            "ocr_confidence": round(self.ocr_confidence, 2),
+            "classification_confidence": round(self.classification_confidence, 2),
+            "extraction_confidence": round(self.extraction_confidence, 2),
+            "classification_source": self.classification_source,
+            "ocr_backend": self.ocr_backend,
+            "field_metadata": self.field_metadata,
+            "document_indicators": self.document_indicators,
             "is_valid": self.is_valid,
             "is_expired": self.is_expired,
             "is_blurry": self.is_blurry,
@@ -274,12 +309,196 @@ def _pdf_first_page_as_png(data: bytes) -> Optional[bytes]:
         return None
 
 
-# ─── Step 2: Gemini Vision OCR ────────────────────────────────────────────────
+# ─── Step 2: deterministic local OCR, with Gemini as optional fallback ───────
+
+def _normalized_image_variants(image_bytes: bytes) -> list[tuple[str, Any]]:
+    """Return deterministic OCR candidates without degrading a good original.
+
+    The first candidate preserves the decoded image (apart from EXIF rotation
+    and RGB conversion).  A second grayscale candidate is resized only when
+    necessary and receives conservative contrast normalization and denoising.
+    """
+    try:
+        from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
+    except ImportError:
+        return []
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as opened:
+            original = ImageOps.exif_transpose(opened).convert("RGB")
+    except Exception:
+        return []
+
+    variants: list[tuple[str, Any]] = [("original", original)]
+    gray = ImageOps.grayscale(original)
+    width, height = gray.size
+    shortest = min(width, height)
+    if shortest and shortest < 900:
+        scale = min(2.5, 900 / shortest)
+        gray = gray.resize(
+            (max(1, round(width * scale)), max(1, round(height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+
+    # Only apply stronger enhancement to low-contrast scans.  The untouched
+    # original always remains a candidate and wins when its OCR is better.
+    contrast = float(ImageStat.Stat(gray).stddev[0])
+    if contrast < 48:
+        gray = ImageOps.autocontrast(gray, cutoff=1)
+        gray = ImageEnhance.Contrast(gray).enhance(1.25)
+        gray = gray.filter(ImageFilter.MedianFilter(size=3))
+    else:
+        gray = ImageOps.autocontrast(gray, cutoff=0.5)
+    variants.append(("normalized", gray))
+    return variants
+
+
+def _tesseract_languages(pytesseract_module: Any) -> tuple[str, ...]:
+    """Select installed Arabic/French/English Tesseract packs in priority order."""
+    try:
+        installed = set(pytesseract_module.get_languages(config=""))
+    except Exception:
+        return ()
+    return tuple(code for code in ("ara", "fra", "eng") if code in installed)
+
+
+def _correct_tesseract_orientation(image: Any, pytesseract_module: Any) -> Any:
+    """Apply Tesseract OSD's deterministic rotation when it is confident enough."""
+    try:
+        osd = pytesseract_module.image_to_osd(image, config="--psm 0")
+        rotate_match = re.search(r"Rotate:\s*(0|90|180|270)", osd)
+        confidence_match = re.search(r"Orientation confidence:\s*([0-9.]+)", osd)
+        rotate = int(rotate_match.group(1)) if rotate_match else 0
+        confidence = float(confidence_match.group(1)) if confidence_match else 0.0
+        if rotate and confidence >= 2.0:
+            return image.rotate(-rotate, expand=True)
+    except Exception:
+        pass
+    return image
+
+
+def _text_from_tesseract_data(data: dict[str, list[Any]]) -> tuple[str, float]:
+    """Rebuild OCR lines and calculate a token-weighted confidence."""
+    line_tokens: dict[tuple[int, int, int], list[str]] = {}
+    weighted_confidence = 0.0
+    total_weight = 0
+    texts = data.get("text", [])
+    confidences = data.get("conf", [])
+    for index, raw_token in enumerate(texts):
+        token = str(raw_token or "").strip()
+        if not token:
+            continue
+        try:
+            confidence = float(confidences[index])
+        except (IndexError, TypeError, ValueError):
+            confidence = -1.0
+        if confidence >= 0:
+            weight = max(1, len(token))
+            weighted_confidence += confidence * weight
+            total_weight += weight
+        key = (
+            int(data.get("block_num", [0] * len(texts))[index]),
+            int(data.get("par_num", [0] * len(texts))[index]),
+            int(data.get("line_num", [0] * len(texts))[index]),
+        )
+        line_tokens.setdefault(key, []).append(token)
+    text = "\n".join(" ".join(tokens) for tokens in line_tokens.values()).strip()
+    confidence = (weighted_confidence / total_weight / 100.0) if total_weight else 0.0
+    return text, max(0.0, min(confidence, 1.0))
+
+
+def _ocr_with_tesseract(image_bytes: bytes) -> LocalOcrResult:
+    """Run local Tesseract OCR with installed Arabic/French/English packs.
+
+    Import and executable failures are normal operational states.  They are
+    returned as ``unavailable`` without leaking image content or filenames.
+    """
+    try:
+        import pytesseract
+        from pytesseract import Output
+    except ImportError:
+        return LocalOcrResult()
+
+    configured_command = settings.tesseract_cmd.strip()
+    if configured_command:
+        pytesseract.pytesseract.tesseract_cmd = configured_command
+
+    configured_tessdata = settings.tessdata_prefix.strip()
+    if configured_tessdata:
+        os.environ["TESSDATA_PREFIX"] = configured_tessdata
+
+    variants = _normalized_image_variants(image_bytes)
+    languages = _tesseract_languages(pytesseract)
+    if not variants or not languages:
+        return LocalOcrResult(languages=languages)
+
+    best = LocalOcrResult(status="empty", languages=languages)
+    lang_spec = "+".join(languages)
+    for variant_name, image in variants:
+        oriented = _correct_tesseract_orientation(image, pytesseract)
+        try:
+            data = pytesseract.image_to_data(
+                oriented,
+                lang=lang_spec,
+                config="--oem 3 --psm 6",
+                output_type=Output.DICT,
+            )
+        except Exception:
+            return LocalOcrResult(languages=languages)
+        text, confidence = _text_from_tesseract_data(data)
+        if confidence > best.confidence or (
+            confidence == best.confidence and len(text) > len(best.text)
+        ):
+            best = LocalOcrResult(
+                text=text,
+                confidence=confidence,
+                backend=f"tesseract_{variant_name}",
+                status="success" if text else "empty",
+                languages=languages,
+            )
+    return best
+
+
+def _local_text_extraction(
+    file_bytes: bytes,
+    content_type: str,
+) -> tuple[str, int, LocalOcrResult]:
+    """Extract text locally from a selectable PDF or an OCR-compatible image."""
+    if content_type == "application/pdf":
+        text, page_count = _extract_pdf_text_pypdf(file_bytes)
+        if len(text.strip()) >= 80:
+            confidence = 0.98 if len(text.strip()) >= 200 else 0.90
+            return text, page_count, LocalOcrResult(
+                text=text,
+                confidence=confidence,
+                backend="pypdf",
+                status="success",
+            )
+        image_bytes = _pdf_first_page_as_png(file_bytes)
+        if image_bytes:
+            result = _ocr_with_tesseract(image_bytes)
+            if result.text:
+                return result.text, page_count, result
+        if text.strip():
+            return text, page_count, LocalOcrResult(
+                text=text,
+                confidence=min(0.75, 0.30 + len(text.strip()) / 200.0),
+                backend="pypdf_partial",
+                status="success",
+            )
+        return "", page_count, LocalOcrResult(status="unavailable")
+
+    if content_type.startswith("image/"):
+        result = _ocr_with_tesseract(file_bytes)
+        return result.text, 1, result
+    return "", 0, LocalOcrResult(status="unavailable")
+
+
+# ─── Gemini Vision OCR ────────────────────────────────────────────────────────
 
 def _ocr_with_gemini(image_bytes: bytes, mime: str, api_key: str, model: str) -> str:
     """Call Gemini Vision multimodal API to extract raw text from an image/PDF."""
     if not api_key:
-        logger.warning("Gemini Vision OCR skipped: GOOGLE_API_KEY is not set")
         return ""
     try:
         prompt_text = (
@@ -294,10 +513,8 @@ def _ocr_with_gemini(image_bytes: bytes, mime: str, api_key: str, model: str) ->
             contents=[binary_part(image_bytes, mime), prompt_text],
             temperature=0.0,
         )
-        logger.info("Gemini Vision OCR extracted %d chars", len(text))
         return text
-    except Exception as exc:
-        logger.warning("Gemini Vision OCR unavailable; using local fallback: %s", exc)
+    except GeminiRequestError:
         return ""
 
 
@@ -334,8 +551,7 @@ def _analyze_with_gemini_sdk(
             system_instruction=prompts["system"],
             temperature=0.1,
         )
-    except GeminiRequestError as exc:
-        logger.warning("Gemini document analysis unavailable; using deterministic fallback: %s", exc)
+    except GeminiRequestError:
         return ""
 
 
@@ -386,38 +602,39 @@ def analyze_document(
     result = DocumentAnalysis()
     result.is_image = content_type.startswith("image/")
 
-    extracted_text = ""
-    page_count = 0
+    extracted_text, page_count, local_ocr = _local_text_extraction(file_bytes, content_type)
+    result.page_count = page_count
+    result.ocr_backend = local_ocr.backend
+    result.ocr_confidence = local_ocr.confidence
+    result.ocr_used = local_ocr.backend not in {"none", "pypdf", "pypdf_partial"} and bool(extracted_text)
 
-    # ── 1. Text extraction ────────────────────────────────────────────────────
-    if content_type == "application/pdf":
-        extracted_text, page_count = _extract_pdf_text_pypdf(file_bytes)
-        result.page_count = page_count
-
-        # Scanned PDF threshold: fewer than 80 meaningful chars → trigger OCR
-        if len(extracted_text.strip()) < 80 and google_api_key:
-            print(f"[INFO] Scanned PDF detected for '{filename}'. Running Vision OCR.")
-            img_bytes = _pdf_first_page_as_png(file_bytes)
-            if img_bytes:
-                ocr_text = _ocr_with_gemini(img_bytes, "image/png", google_api_key, gemini_model_name)
-            else:
-                # PyMuPDF not available — send PDF bytes directly (Gemini supports it)
-                ocr_text = _ocr_with_gemini(file_bytes, "application/pdf", google_api_key, gemini_model_name)
-            if ocr_text:
-                extracted_text = ocr_text
-                result.ocr_used = True
-                print(f"[OK] OCR: {len(extracted_text)} chars extracted from '{filename}'.")
-
-    elif content_type.startswith("image/"):
-        page_count = 1
-        result.page_count = 1
-        if google_api_key:
-            extracted_text = _ocr_with_gemini(file_bytes, content_type, google_api_key, gemini_model_name)
-            if extracted_text:
-                result.ocr_used = True
-                print(f"[OK] Vision OCR: {len(extracted_text)} chars from image '{filename}'.")
+    if google_api_key and (len(extracted_text.strip()) < 30 or local_ocr.confidence < 0.30):
+        vision_bytes = file_bytes
+        vision_mime = content_type
+        if content_type == "application/pdf":
+            rendered = _pdf_first_page_as_png(file_bytes)
+            if rendered:
+                vision_bytes, vision_mime = rendered, "image/png"
+        vision_text = _ocr_with_gemini(
+            vision_bytes,
+            vision_mime,
+            google_api_key,
+            gemini_model_name,
+        )
+        if vision_text:
+            extracted_text = vision_text
+            result.ocr_used = True
+            result.ocr_backend = "gemini_vision"
+            result.ocr_confidence = 0.72
+            result.gemini_vision_status = "success"
 
     result.extracted_text = extracted_text
+    development_trace(
+        "DOCUMENT OCR",
+        backend=result.ocr_backend,
+        status="success" if extracted_text else local_ocr.status,
+        confidence=f"{result.ocr_confidence:.2f}",
+    )
 
     # ── 2. LLM Analysis ───────────────────────────────────────────────────────
     if len(extracted_text.strip()) >= 30:
@@ -429,6 +646,12 @@ def analyze_document(
             result.llm_analysis = _deterministic_document_summary(
                 extracted_text, lang, user_query=user_query
             )
+
+    development_trace(
+        "DOCUMENT AI",
+        gemini_vision=result.gemini_vision_status,
+        gemini_structured=result.gemini_structured_status,
+    )
 
     return result
 
@@ -566,172 +789,272 @@ def _build_warnings(
     return warnings
 
 
+_DOCUMENT_TYPE_RULES: dict[str, tuple[tuple[str, float], ...]] = {
+    "cin": (
+        ("carte nationale d'identite", 0.72),
+        ("carte nationale d’identité", 0.72),
+        ("بطاقة التعريف الوطنية", 0.75),
+        ("البطاقة الوطنية للتعريف", 0.75),
+        ("dgsn", 0.28),
+        ("cin", 0.18),
+    ),
+    "residence_certificate": (
+        ("certificat de residence", 0.72),
+        ("certificat de domicile", 0.68),
+        ("شهادة السكنى", 0.75),
+        ("شهادة الإقامة", 0.70),
+    ),
+    "birth_certificate": (
+        ("acte de naissance", 0.72),
+        ("extrait de naissance", 0.68),
+        ("عقد الازدياد", 0.75),
+        ("رسم الولادة", 0.75),
+        ("الحالة المدنية", 0.34),
+    ),
+    "electricity_bill": (
+        ("facture d'electricite", 0.72),
+        ("facture d’eau", 0.70),
+        ("facture d'eau", 0.70),
+        ("فاتورة الماء", 0.70),
+        ("فاتورة الكهرباء", 0.72),
+        ("onee", 0.36),
+        ("lydec", 0.36),
+        ("redal", 0.36),
+        ("amendis", 0.36),
+    ),
+    "passport": (("passeport", 0.72), ("جواز السفر", 0.75)),
+    "driving_license": (("permis de conduire", 0.72), ("رخصة السياقة", 0.75)),
+}
+
+
+def _normalized_search_text(text: str) -> str:
+    normalized = text.casefold().replace("’", "'")
+    normalized = re.sub(r"[éèêë]", "e", normalized)
+    normalized = re.sub(r"[àâä]", "a", normalized)
+    normalized = re.sub(r"[îï]", "i", normalized)
+    normalized = re.sub(r"[ôö]", "o", normalized)
+    normalized = re.sub(r"[ùûü]", "u", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _classify_document_locally(text: str) -> tuple[str, float, list[str]]:
+    """Conservatively classify from OCR evidence, never from the filename alone."""
+    normalized = _normalized_search_text(text)
+    if len(normalized) < 10:
+        return "unknown", 0.05 if normalized else 0.0, []
+
+    scores: dict[str, float] = {}
+    evidence: dict[str, list[str]] = {}
+    for document_type, rules in _DOCUMENT_TYPE_RULES.items():
+        matches = [(phrase, weight) for phrase, weight in rules if phrase in normalized]
+        if matches:
+            scores[document_type] = min(0.97, sum(weight for _, weight in matches))
+            evidence[document_type] = [phrase for phrase, _ in matches]
+
+    cin_match = re.search(r"(?<![A-Z0-9])([A-Z]{1,2})\s*[- ]?\s*([0-9]{4,7})(?![0-9])", text.upper())
+    if cin_match:
+        scores["cin"] = min(0.97, scores.get("cin", 0.0) + 0.32)
+        evidence.setdefault("cin", []).append("national_id_pattern")
+    if re.search(r"\b(?:nom|pr[ée]nom|date de naissance)\b", text, re.IGNORECASE):
+        scores["cin"] = min(0.97, scores.get("cin", 0.0) + 0.12)
+        evidence.setdefault("cin", []).append("identity_labels")
+    if any(label in text for label in ("الاسم العائلي", "الاسم الشخصي", "تاريخ الازدياد")):
+        scores["cin"] = min(0.97, scores.get("cin", 0.0) + 0.12)
+        evidence.setdefault("cin", []).append("arabic_identity_labels")
+
+    if not scores:
+        return "unknown", 0.12, []
+    best_type = max(scores, key=scores.get)
+    best_score = scores[best_type]
+    runner_up = max((score for doc_type, score in scores.items() if doc_type != best_type), default=0.0)
+    if best_score < 0.60 or best_score - runner_up < 0.12:
+        return "unknown", min(best_score, 0.49), evidence.get(best_type, [])
+    return best_type, round(best_score, 3), evidence.get(best_type, [])
+
+
+def _labeled_value(text: str, label_pattern: str, value_pattern: str, max_length: int = 100) -> Optional[str]:
+    """Extract a same-line or immediately-following-line label value."""
+    match = re.search(
+        rf"(?:{label_pattern})\s*[:=\-]?\s*({value_pattern})",
+        text,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if not match:
+        match = re.search(
+            rf"(?:{label_pattern})\s*[:=\-]?\s*\n\s*({value_pattern})",
+            text,
+            re.IGNORECASE | re.MULTILINE,
+        )
+    if not match:
+        return None
+    value = re.sub(r"\s+", " ", match.group(1)).strip(" :-")[:max_length]
+    return value or None
+
+
+def _valid_date(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y-%m-%d"):
+        try:
+            datetime.strptime(value, fmt)
+            return value
+        except ValueError:
+            continue
+    return None
+
+
 def _heuristic_structured_extract(
     text: str,
     filename: str,
     lang: str = "darija",
     ocr_used: bool = False,
     page_count: int = 1,
+    ocr_confidence: Optional[float] = None,
+    ocr_backend: str = "none",
 ) -> ExtractedDocumentMetadata:
-    """Resilient fallback extractor for Moroccan administrative documents using heuristics and regex."""
+    """Deterministic, schema-validated local extractor for Moroccan documents."""
+    del filename  # Filenames are untrusted and may contain PII or misleading words.
+    text = text or ""
+    effective_ocr_confidence = (
+        max(0.0, min(float(ocr_confidence), 1.0))
+        if ocr_confidence is not None
+        else (0.90 if text.strip() else 0.0)
+    )
+    doc_type, classification_confidence, indicators = _classify_document_locally(text)
+    field_metadata: dict[str, dict[str, Any]] = {}
+
+    def record(key: str, value: Optional[str], confidence: float, source: str) -> Optional[str]:
+        if value:
+            field_metadata[key] = {
+                "value": value,
+                "confidence": round(max(0.0, min(confidence, 1.0)), 2),
+                "source": source,
+            }
+        return value
+
     upper = text.upper()
-    cin_number: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    full_name: Optional[str] = None
-    birth_date: Optional[str] = None
-    expiry_date: Optional[str] = None
-    address: Optional[str] = None
-    issuing_authority: Optional[str] = None
-    doc_type = "other"
-    is_valid = True
+    cin_match = re.search(r"(?<![A-Z0-9])([A-Z]{1,2})\s*[- ]?\s*([0-9]{4,7})(?![0-9])", upper)
+    cin_number = record(
+        "national_id",
+        f"{cin_match.group(1)}{cin_match.group(2)}" if cin_match else None,
+        0.94 if doc_type == "cin" else 0.78,
+        "regex_local",
+    )
+
+    latin_word = r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\- ]{1,60}"
+    # Deliberately exclude newlines so one label never consumes the next one.
+    arabic_word = r"[\u0600-\u06FF][\u0600-\u06FF \u00A0\-]{1,60}"
+    last_name = _labeled_value(text, r"(?:\bnom\b(?!\s+et)|الاسم\s+العائلي|النسب)", rf"(?:{latin_word}|{arabic_word})")
+    first_name = _labeled_value(text, r"(?:\bpr[ée]nom\b|الاسم\s+الشخصي)", rf"(?:{latin_word}|{arabic_word})")
+    full_name = _labeled_value(text, r"(?:\bnom\s+et\s+pr[ée]nom\b|الاسم\s+الكامل)", rf"(?:{latin_word}|{arabic_word})")
+
+    def clean_name(value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        value = re.split(
+            r"(?i)\b(?:pr[ée]nom|nom|n[ée]\s+le|naissance|adresse|cin|valable)\b|(?:تاريخ|العنوان|رقم)",
+            value,
+        )[0].strip()
+        if not value:
+            return None
+        return value.title() if re.search(r"[A-Za-zÀ-ÿ]", value) else value
+
+    first_name = clean_name(first_name)
+    last_name = clean_name(last_name)
+    full_name = clean_name(full_name)
+    if not full_name and (first_name or last_name):
+        full_name = " ".join(value for value in (first_name, last_name) if value)
+    record("first_name", first_name, 0.88, "label_proximity_local")
+    record("last_name", last_name, 0.88, "label_proximity_local")
+    record("full_name", full_name, 0.86, "label_proximity_local")
+
+    date_pattern = r"(?:\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{1,2}-\d{1,2})"
+    birth_date = _valid_date(_labeled_value(
+        text,
+        r"(?:n[ée]\s+le|date\s+de\s+naissance|naissance|تاريخ\s+الازدياد|تاريخ\s+الميلاد)",
+        date_pattern,
+        10,
+    ))
+    expiry_date = _valid_date(_labeled_value(
+        text,
+        r"(?:valable\s+jusqu['’]?au|expire\s+le|date\s+d['’]expiration|validit[ée]|صالح\s+إلى|تاريخ\s+انتهاء\s+الصلاحية)",
+        date_pattern,
+        10,
+    ))
+    record("birth_date", birth_date, 0.92, "label_regex_local")
+    record("expiry_date", expiry_date, 0.92, "label_regex_local")
+
+    address = _labeled_value(
+        text,
+        r"(?:adresse|demeurant(?:e)?|r[ée]sidant(?:e)?|العنوان)",
+        r"[^\n\r]{5,120}",
+        120,
+    )
+    if address:
+        address = re.split(
+            r"(?i)\b(?:valable|date|n[ée]\s+le|cin|n°|nom|pr[ée]nom)\b|(?:تاريخ|الاسم|رقم)",
+            address,
+        )[0].strip(" ,;:-") or None
+    record("address", address, 0.84, "label_proximity_local")
+
+    issuing_authority = _labeled_value(
+        text,
+        r"(?:d[ée]livr[ée]e?\s+par|autorit[ée]\s+[ée]mettrice|الجهة\s+المصدرة)",
+        r"[^\n\r]{2,80}",
+        80,
+    )
+    if not issuing_authority and re.search(r"\bDGSN\b", upper):
+        issuing_authority = "DGSN"
+    record("issuing_authority", issuing_authority, 0.82, "label_or_vocabulary_local")
+
     is_expired = False
-    is_blurry = len(text.strip()) < 20 and not text.strip()
-    is_relevant = len(text.strip()) >= 10
-    confidence = 0.75
-    anomalies: list[str] = []
-
-    # 1. Moroccan CIN detection
-    cin_match = re.search(r'\b([A-Z]{1,2})\s*([0-9]{4,7})\b', text)
-    if cin_match:
-        cin_number = f"{cin_match.group(1)}{cin_match.group(2)}"
-        confidence += 0.15
-
-    # 2. Document type detection (combining filename and extracted text)
-    combined = f"{filename} {text}".upper()
-    if any(k in combined for k in ["CARTE NATIONALE", "CARTE_NATIONALE", "CIN", "IDENTITE", "DGSN"]) or "بطاقة التعريف" in text or cin_match:
-        doc_type = "cin"
-        issuing_authority = "DGSN (Direction Générale de la Sûreté Nationale)"
-        confidence = max(confidence, 0.90)
-        is_relevant = True
-    elif any(k in combined for k in ["RESIDENCE", "HABITATION", "LOGEMENT"]) or "السكنى" in text or "سكنى" in text:
-        doc_type = "residence_certificate"
-        issuing_authority = "DGSN / Sûreté Nationale / Caïdat"
-        confidence = max(confidence, 0.90)
-        is_relevant = True
-    elif any(k in combined for k in ["NAISSANCE", "ETAT CIVIL", "ACTE"]) or "عقد الازدياد" in text or "الحالة المدنية" in text or "ازدياد" in text:
-        doc_type = "birth_certificate"
-        issuing_authority = "Bureau de l'État Civil"
-        confidence = max(confidence, 0.90)
-        is_relevant = True
-    elif any(kw in combined for kw in ["LYDEC", "REDAL", "ONEE", "AMENDIS", "RADEE", "EAU", "ELECTRICITE", "FACTURE"]):
-        doc_type = "electricity_bill"
-        issuing_authority = "Régie de distribution d'eau et d'électricité"
-        confidence = max(confidence, 0.90)
-        is_relevant = True
-    elif "PASSEPORT" in combined or "جواز" in text:
-        doc_type = "passport"
-        issuing_authority = "Ministère de l'Intérieur"
-        confidence = max(confidence, 0.90)
-        is_relevant = True
-    elif "PERMIS" in combined or "سياقة" in text:
-        doc_type = "driving_license"
-        issuing_authority = "NARSA (Agence Nationale de la Sécurité Routière)"
-        confidence = max(confidence, 0.90)
-        is_relevant = True
-    elif not is_relevant:
-        doc_type = "irrelevant"
-        confidence = 0.2
-        is_valid = False
-
-    # 3. Dates extraction
-    exp_match = re.search(
-        r'(?:valable\s*jusqu[\'\s]*au|expire\s*le|validit[ée]\s*[:=]?|صالح\s*إلى)\s*[:=]?\s*(\d{1,2}[./-]\d{1,2}[./-]\d{4})',
-        text,
-        re.IGNORECASE,
-    )
-    if exp_match:
-        expiry_date = exp_match.group(1)
-
-    birth_match = re.search(
-        r'(?:n[ée]\s*le|naissance\s*[:=]?|تاريخ\s*الازدياد)\s*[:=]?\s*(\d{1,2}[./-]\d{1,2}[./-]\d{4})',
-        text,
-        re.IGNORECASE,
-    )
-    if birth_match:
-        birth_date = birth_match.group(1)
-
-    date_matches = re.findall(r'\b(\d{1,2}[./-]\d{1,2}[./-]\d{4})\b', text)
-    if date_matches:
-        if not birth_date:
-            birth_date = date_matches[0]
-        if not expiry_date and len(date_matches) > 1:
-            expiry_date = date_matches[-1]
-
     if expiry_date:
-        try:
-            # Check expiration against current year (2026)
-            parts = re.split(r'[./-]', expiry_date)
-            year = int(parts[2]) if len(parts) == 3 else 0
-            if 2000 <= year < 2026:
-                is_expired = True
-                is_valid = False
-        except Exception:
-            pass
+        for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y-%m-%d"):
+            try:
+                is_expired = datetime.strptime(expiry_date, fmt).date() < datetime.now().date()
+                break
+            except ValueError:
+                continue
 
-    # 4. Address detection
-    addr_match = re.search(
-        r'(?:adresse|demeurant[a-z\s]*|résidant[a-z\s]*|العنوان|حي|زنقة|شارع)\s*[:=]?\s*([^\n\r]{5,70})',
-        text,
-        re.IGNORECASE,
-    )
-    if addr_match:
-        raw_addr = addr_match.group(1).strip()
-        # Cut off if trailing keywords appear like "Valable jusqu'au" or dates
-        raw_addr = re.split(r'(?i)\b(?:valable|date|né|ne le|cin|n°)\b', raw_addr)[0].strip()
-        if raw_addr:
-            address = raw_addr
+    is_blurry = not text.strip() or effective_ocr_confidence < 0.30
+    is_relevant = doc_type != "unknown"
+    is_valid = is_relevant and not is_expired
+    anomalies: list[str] = []
+    if doc_type == "unknown" and text.strip():
+        anomalies.append("Document type could not be identified with sufficient confidence.")
 
-    # 5. Name detection heuristics
-    nom_match = re.search(r'\bnom\s*[:=]?\s*([A-Za-zÀ-ÿ\-]+)', text, re.IGNORECASE)
-    prenom_match = re.search(r'\bpr[ée]nom\s*[:=]?\s*([A-Za-zÀ-ÿ\-]+)', text, re.IGNORECASE)
-    if nom_match and prenom_match:
-        last_name = nom_match.group(1).strip().capitalize()
-        first_name = prenom_match.group(1).strip().capitalize()
-        full_name = f"{first_name} {last_name}"
-    elif nom_match:
-        last_name = nom_match.group(1).strip().capitalize()
-    elif prenom_match:
-        first_name = prenom_match.group(1).strip().capitalize()
-    else:
-        name_match = re.search(
-            r'(?:nom\s*(?:et\s*prénom)?)\s*[:=]?\s*([A-Za-zÀ-ÿ\s]{3,35})',
-            text,
-            re.IGNORECASE,
+    detected_confidences = [item["confidence"] for item in field_metadata.values()]
+    if detected_confidences:
+        field_average = sum(detected_confidences) / len(detected_confidences)
+        extraction_confidence = (
+            0.45 * classification_confidence
+            + 0.35 * field_average
+            + 0.20 * effective_ocr_confidence
         )
-        if name_match:
-            full_name = name_match.group(1).strip().title()
-            parts = full_name.split()
-            if len(parts) >= 2:
-                first_name = parts[0]
-                last_name = " ".join(parts[1:])
-            else:
-                first_name = full_name
-
-    if not text.strip() and doc_type != "irrelevant":
-        is_blurry = False
-        norm_l = _resolve_lang(lang)
-        if norm_l == "fr":
-            anomalies.append("Document reconnu. Vous pouvez ajuster vos coordonnées ci-dessous pour pré-remplir votre démarche.")
-        elif norm_l == "arabic":
-            anomalies.append("تم التعرف على الوثيقة. يرجى إدخال أو مراجعة البيانات في الخانات أسفله.")
-        else:
-            anomalies.append("تم التعرف على الوثيقة. تقدر تعمر أو تراجع المعلومات ديالك في الخانات أسفله.")
-
+    else:
+        extraction_confidence = 0.60 * classification_confidence + 0.20 * effective_ocr_confidence
+    extraction_confidence = max(0.0, min(extraction_confidence, 0.97))
     warnings = _build_warnings(is_expired, is_blurry, is_relevant, anomalies, lang)
 
     return ExtractedDocumentMetadata(
         document_type=doc_type,
-        document_type_label=DOCUMENT_TYPE_LABELS.get(doc_type, DOCUMENT_TYPE_LABELS["other"]),
+        document_type_label=DOCUMENT_TYPE_LABELS.get(doc_type, DOCUMENT_TYPE_LABELS["unknown"]),
         cin_number=cin_number,
         first_name=first_name,
         last_name=last_name,
-        full_name=full_name or (f"{first_name} {last_name}".strip() if first_name or last_name else None),
+        full_name=full_name,
         birth_date=birth_date,
         address=address,
         expiry_date=expiry_date,
         issuing_authority=issuing_authority,
-        confidence_score=min(confidence, 0.98),
+        confidence_score=extraction_confidence,
+        ocr_confidence=effective_ocr_confidence,
+        classification_confidence=classification_confidence,
+        extraction_confidence=extraction_confidence,
+        classification_source="local_rules",
+        ocr_backend=ocr_backend,
+        field_metadata=field_metadata,
+        document_indicators=indicators,
         is_valid=is_valid,
         is_expired=is_expired,
         is_blurry=is_blurry,
@@ -752,35 +1075,70 @@ def extract_structured_metadata(
     google_api_key: str = "",
     gemini_model_name: str = "gemini-2.0-flash",
 ) -> ExtractedDocumentMetadata:
-    """Run OCR and multimodal LLM to extract structured entities and detect anomalies."""
+    """Extract metadata locally first, using Gemini only for ambiguity."""
     lang = _resolve_lang(language)
-    ocr_used = False
-    page_count = 1
-    extracted_text = ""
+    extracted_text, page_count, local_ocr = _local_text_extraction(file_bytes, content_type)
+    ocr_used = local_ocr.backend not in {"none", "pypdf", "pypdf_partial"} and bool(extracted_text)
+    gemini_vision_status = "unavailable"
+    gemini_structured_status = "unavailable"
 
-    # 1. Text extraction / OCR
-    if content_type == "application/pdf":
-        extracted_text, page_count = _extract_pdf_text_pypdf(file_bytes)
-        if len(extracted_text.strip()) < 80 and google_api_key:
-            img_bytes = _pdf_first_page_as_png(file_bytes)
-            if img_bytes:
-                ocr_text = _ocr_with_gemini(img_bytes, "image/png", google_api_key, gemini_model_name)
-            else:
-                ocr_text = _ocr_with_gemini(file_bytes, "application/pdf", google_api_key, gemini_model_name)
-            if ocr_text:
-                extracted_text = ocr_text
-                ocr_used = True
-    elif content_type.startswith("image/"):
-        page_count = 1
-        if google_api_key:
-            extracted_text = _ocr_with_gemini(file_bytes, content_type, google_api_key, gemini_model_name)
-            if extracted_text:
-                ocr_used = True
+    # Local OCR is the baseline. Gemini Vision is attempted only when local
+    # extraction is absent or clearly too weak to support deterministic rules.
+    if google_api_key and (len(extracted_text.strip()) < 30 or local_ocr.confidence < 0.30):
+        vision_bytes = file_bytes
+        vision_mime = content_type
+        if content_type == "application/pdf":
+            rendered = _pdf_first_page_as_png(file_bytes)
+            if rendered:
+                vision_bytes, vision_mime = rendered, "image/png"
+        gemini_text = _ocr_with_gemini(
+            vision_bytes,
+            vision_mime,
+            google_api_key,
+            gemini_model_name,
+        )
+        if gemini_text:
+            extracted_text = gemini_text
+            ocr_used = True
+            local_ocr = LocalOcrResult(
+                text=gemini_text,
+                confidence=0.72,
+                backend="gemini_vision",
+                status="success",
+            )
+            gemini_vision_status = "success"
 
-    # 2. Try Gemini Multimodal Structured JSON Extraction if API key is present
-    if google_api_key:
+    development_trace(
+        "DOCUMENT OCR",
+        backend=local_ocr.backend,
+        status=local_ocr.status,
+        confidence=f"{local_ocr.confidence:.2f}",
+    )
+
+    local_result = _heuristic_structured_extract(
+        extracted_text,
+        filename,
+        lang=lang,
+        ocr_used=ocr_used,
+        page_count=page_count,
+        ocr_confidence=local_ocr.confidence,
+        ocr_backend=local_ocr.backend,
+    )
+
+    # Ask Gemini for structured interpretation only when local evidence is
+    # ambiguous.  If the preceding Vision request failed, do not immediately
+    # issue another provider request that is likely to fail for the same reason.
+    needs_interpretation = (
+        local_result.document_type == "unknown"
+        or local_result.extraction_confidence < 0.62
+    )
+    may_try_structured = bool(google_api_key) and needs_interpretation and not (
+        local_ocr.status != "success" and gemini_vision_status == "unavailable"
+    )
+    final_result = local_result
+    extraction_backend = "local_rules"
+    if may_try_structured:
         try:
-            # Pass image bytes directly for high-precision vision extraction
             if content_type.startswith("image/"):
                 parts = [
                     binary_part(file_bytes, content_type),
@@ -813,7 +1171,10 @@ def extract_structured_metadata(
             raw_json = _clean_json_str(response_text)
             if raw_json:
                 data = json.loads(raw_json)
-                doc_type = data.get("document_type") or "other"
+                allowed_types = set(DOCUMENT_TYPE_LABELS) - {"unknown"}
+                doc_type = data.get("document_type")
+                if doc_type not in allowed_types:
+                    doc_type = "unknown"
                 is_expired = bool(data.get("is_expired", False))
                 is_blurry = bool(data.get("is_blurry", False))
                 is_relevant = bool(data.get("is_relevant", True))
@@ -826,10 +1187,31 @@ def extract_structured_metadata(
                 full_name = data.get("full_name") or (
                     f"{first_name} {last_name}".strip() if first_name or last_name else None
                 )
-
-                return ExtractedDocumentMetadata(
+                # Provider confidence remains bounded because the response is
+                # interpretation, not independently verified evidence.
+                model_confidence = max(0.0, min(float(data.get("confidence_score", 0.0)), 0.88))
+                values = {
+                    "national_id": data.get("cin_number"),
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "full_name": full_name,
+                    "birth_date": data.get("birth_date"),
+                    "address": data.get("address"),
+                    "expiry_date": data.get("expiry_date"),
+                    "issuing_authority": data.get("issuing_authority"),
+                }
+                field_metadata = {
+                    key: {
+                        "value": value,
+                        "confidence": round(min(model_confidence, 0.85), 2),
+                        "source": "gemini_structured",
+                    }
+                    for key, value in values.items()
+                    if value
+                }
+                final_result = ExtractedDocumentMetadata(
                     document_type=doc_type,
-                    document_type_label=DOCUMENT_TYPE_LABELS.get(doc_type, DOCUMENT_TYPE_LABELS["other"]),
+                    document_type_label=DOCUMENT_TYPE_LABELS.get(doc_type, DOCUMENT_TYPE_LABELS["unknown"]),
                     cin_number=data.get("cin_number"),
                     first_name=first_name,
                     last_name=last_name,
@@ -838,7 +1220,14 @@ def extract_structured_metadata(
                     address=data.get("address"),
                     expiry_date=data.get("expiry_date"),
                     issuing_authority=data.get("issuing_authority"),
-                    confidence_score=float(data.get("confidence_score", 0.95)),
+                    confidence_score=model_confidence,
+                    ocr_confidence=local_ocr.confidence,
+                    classification_confidence=model_confidence,
+                    extraction_confidence=model_confidence,
+                    classification_source="gemini_structured",
+                    ocr_backend=local_ocr.backend,
+                    field_metadata=field_metadata,
+                    document_indicators=local_result.document_indicators,
                     is_valid=is_valid,
                     is_expired=is_expired,
                     is_blurry=is_blurry,
@@ -849,14 +1238,28 @@ def extract_structured_metadata(
                     ocr_used=ocr_used,
                     page_count=page_count,
                 )
-        except Exception as exc:
-            logger.warning("Gemini structured extraction failed; using heuristics: %s", exc)
+                gemini_structured_status = "success"
+                extraction_backend = "gemini_structured"
+        except (GeminiRequestError, json.JSONDecodeError, TypeError, ValueError):
+            # Provider availability and malformed provider output are expected
+            # fallback conditions; never print payloads, OCR text, or PII.
+            gemini_structured_status = "unavailable"
 
-    # 3. Fallback Heuristics
-    return _heuristic_structured_extract(
-        extracted_text,
-        filename,
-        lang=lang,
-        ocr_used=ocr_used,
-        page_count=page_count,
+    development_trace(
+        "DOCUMENT CLASSIFIER",
+        backend=final_result.classification_source,
+        document_type=final_result.document_type,
+        confidence=f"{final_result.classification_confidence:.2f}",
     )
+    development_trace(
+        "FIELD EXTRACTION",
+        backend=extraction_backend,
+        fields_detected_count=len(final_result.field_metadata),
+        overall_confidence=f"{final_result.extraction_confidence:.2f}",
+    )
+    development_trace(
+        "DOCUMENT AI",
+        gemini_vision=gemini_vision_status,
+        gemini_structured=gemini_structured_status,
+    )
+    return final_result

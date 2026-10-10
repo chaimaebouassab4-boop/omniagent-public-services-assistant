@@ -1,5 +1,7 @@
 # FAQ - شهادة العزوبة
 
+<!-- Compatibility mirror. Canonical structured content: single_status_certificate.json -->
+
 **محدث: مارس 2026**
 
 1. **واش نقدر ناخدها أونلاين؟**  

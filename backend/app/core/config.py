@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     upload_root: str = "uploads"
     admin_email: str = "admin@demo.local"
     admin_password: str = "admin123"
+    debug_logging: bool = Field(
+        default=False,
+        description="Emit concise development-only chat pipeline traces",
+    )
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
@@ -57,6 +61,10 @@ class Settings(BaseSettings):
     # ── Audio / Voice ──
     gemini_audio_model: str = Field(default="gemini-3.6-flash", description="Gemini model for audio transcription")
     max_audio_upload_bytes: int = Field(default=25 * 1024 * 1024, description="Max audio upload size in bytes (25 MB)")
+
+    # ── OCR Engine (Tesseract) ──
+    tesseract_cmd: str = Field(default="", description="Path to Tesseract OCR executable (or TESSERACT_CMD env)")
+    tessdata_prefix: str = Field(default="", description="Path to tessdata folder (or TESSDATA_PREFIX env)")
 
 
 settings = Settings()

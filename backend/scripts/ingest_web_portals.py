@@ -72,6 +72,8 @@ _PROJECT_ROOT = _BACKEND_DIR.parent                    # omniagent-public-servic
 
 sys.path.insert(0, str(_BACKEND_DIR))                  # exposes `app` package
 
+from app.services.procedure_schema import PROCEDURE_IDS_BY_DIR  # noqa: E402
+
 CHROMA_DIR  = _PROJECT_ROOT / "chroma_db"
 COLLECTION_NAME = "public_services_kb"
 
@@ -382,6 +384,10 @@ def _flush_chunk(chunks: list[TextChunk], page: ScrapedPage, text: str) -> None:
             "url": page.url,
             "title": page.title,
             "service_type": page.service_type,
+            "procedure_id": PROCEDURE_IDS_BY_DIR.get(page.service_type, page.service_type),
+            "section": "web_content",
+            "language": "multilingual",
+            "source_type": "web_portal",
             "label_ar": page.label_ar,
             "source_key": page.source_key,
             "node_type": "web_chunk",
@@ -416,7 +422,10 @@ def get_chroma_collection():
     os.environ["ANONYMIZED_TELEMETRY"] = "False"
     CHROMA_DIR.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-    collection = client.get_or_create_collection(COLLECTION_NAME)
+    collection = client.get_or_create_collection(
+        COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine", "embedding_model": "BAAI/bge-m3"},
+    )
     return client, collection
 
 
@@ -574,6 +583,10 @@ def seed_from_local_kb(collection, embed_model, force: bool = False) -> int:
                     "url": source_url,
                     "title": svc_name,
                     "service_type": service_type,
+                    "procedure_id": PROCEDURE_IDS_BY_DIR.get(service_type, service_type),
+                    "section": node_type,
+                    "language": "ar",
+                    "source_type": "official",
                     "label_ar": svc_name,
                     "source_key": service_type,
                     "node_type": node_type,

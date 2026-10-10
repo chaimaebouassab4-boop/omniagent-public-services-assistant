@@ -1,5 +1,7 @@
 # FAQ - عقد الزواج
 
+<!-- Compatibility mirror. Canonical structured content: marriage_certificate.json -->
+
 **محدث: مارس 2026**
 
 1. **كم الرسوم ديال عقد الزواج؟**  

@@ -1,6 +1,5 @@
 import os
 import sys
-import uuid
 from pathlib import Path
 
 import pytest
@@ -8,13 +7,19 @@ import pytest
 BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
-import tempfile
+# Root conftest establishes isolation before repository-wide collection. Keep a
+# guarded fallback for direct invocations whose pytest root is tests/backend.
+if "OMNI_TEST_RUN_DIR" in os.environ:
+    TEST_RUN_DIR = Path(os.environ["OMNI_TEST_RUN_DIR"])
+else:
+    import tempfile
+    import uuid
 
-# Set isolation before pytest imports test modules that may instantiate Settings.
-TEST_RUN_DIR = Path(tempfile.gettempdir()) / "omni-pytest-tmp" / uuid.uuid4().hex
-TEST_RUN_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["DATABASE_URL"] = f"sqlite:///{(TEST_RUN_DIR / 'test.db').as_posix()}"
-os.environ["UPLOAD_ROOT"] = str(TEST_RUN_DIR / "uploads")
+    TEST_RUN_DIR = Path(tempfile.gettempdir()) / "omni-pytest-tmp" / uuid.uuid4().hex
+    TEST_RUN_DIR.mkdir(parents=True, exist_ok=True)
+    os.environ["OMNI_TEST_RUN_DIR"] = str(TEST_RUN_DIR)
+    os.environ["DATABASE_URL"] = f"sqlite:///{(TEST_RUN_DIR / 'test.db').as_posix()}"
+    os.environ["UPLOAD_ROOT"] = str(TEST_RUN_DIR / "uploads")
 
 
 @pytest.fixture(scope="session")

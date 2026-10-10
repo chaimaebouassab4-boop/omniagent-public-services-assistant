@@ -356,15 +356,15 @@ export function PopularServices({ catalogue }: { catalogue: Catalogue }) {
                   <div className="flex items-center gap-3 text-muted-foreground text-[11px]">
                     <span className="inline-flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {service.processingTimeDays
-                        ? `${service.processingTimeDays} ${language === "fr" ? "jours" : "أيام"}`
+                      {service.processingDays
+                        ? `${service.processingDays} ${language === "fr" ? "jours" : "أيام"}`
                         : language === "fr"
                         ? "2 à 3 jours"
                         : "2 إلى 3 أيام"}
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <FileCheck2 className="h-3 w-3" />
-                      {service.requiredDocumentsCount ?? 3} {language === "fr" ? "pièces" : "وثائق"}
+                      {service.requiredDocuments?.length ?? 3} {language === "fr" ? "pièces" : "وثائق"}
                     </span>
                   </div>
 
