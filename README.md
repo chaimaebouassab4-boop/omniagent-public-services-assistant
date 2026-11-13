@@ -15,6 +15,16 @@
 
 **OmniAgent** is an intelligent, trilingual GovTech AI assistant and digital case management platform built specifically for Moroccan public administration. It bridges the gap between citizens and public services by transforming complex administrative regulations into simple, accessible, and conversational guidance.
 
+### Schéma de valeur, gouvernance et déploiement
+
+**OmniAgent — Solution GovTech d’assistance citoyenne pour les services administratifs marocains.** Une plateforme pensée pour accompagner les citoyens en darija, en arabe et en français, faciliter la préparation et le suivi des dossiers, et aider les agents publics à traiter les demandes.
+
+[![Schéma OmniAgent : bénéficiaires, assistance multilingue, sources officielles, pré-validation documentaire OCR, suivi des dossiers, gouvernance et déploiement progressif](docs/diagrams/omniagent-valeur-gouvernance-deploiement.png)](docs/diagrams/omniagent-valeur-gouvernance-deploiement.png)
+
+Ce schéma présente la vision du projet : collaboration avec les institutions, protection des données, sécurité et déploiement progressif, de la démonstration publique au pilote institutionnel puis à une infrastructure souveraine. Les partenariats, engagements de conformité et étapes de déploiement présentés constituent des objectifs à valider au fil du projet.
+
+*Simplifier aujourd’hui, un service public plus proche demain.*
+
 ### 🌐 True Trilingual Experience
 OmniAgent natively understands and responds across three linguistic spectrums with full **RTL / LTR layout switching**:
 * **Moroccan Darija (`دارجة مغربية`)** — Conversational, phonetic, and authentic phrasing understood by all citizens.
