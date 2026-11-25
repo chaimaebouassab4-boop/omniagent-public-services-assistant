@@ -32,52 +32,49 @@ export default function Home() {
           <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
         </div>
 
-        <div className={`relative z-10 mx-auto w-full max-w-[1600px] px-4 py-8 sm:px-6 sm:py-16 lg:px-10 lg:py-20 xl:px-14`}>
-          <div className="grid gap-8 sm:gap-10 lg:grid-cols-12 lg:items-center lg:gap-12 xl:gap-16">
+        <div className="relative z-10 mx-auto w-full max-w-[1600px] px-4 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12 xl:px-14 2xl:py-16">
+          <div className="grid gap-8 sm:gap-10 lg:grid-cols-12 lg:items-center lg:gap-10 xl:gap-12">
             {/* Left Column: Headline, Description & CTAs */}
             <div className={`lg:col-span-7 ${isRtl ? "text-right" : "text-left"}`}>
               <motion.div custom={0} variants={fadeUp} initial="hidden" animate="show">
-                <Badge className="mb-3 max-w-full whitespace-normal border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary sm:mb-5 sm:px-4 sm:text-sm">
+                <Badge className="mb-3 max-w-full whitespace-normal border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary sm:mb-4 sm:px-4 sm:text-sm">
                   {language === "fr" ? "Services publics • Assistance intelligente" : language === "ar" ? "خدمات عمومية • مساعدة ذكية" : "الخدمات العمومية • مواكبة ذكية"}
                 </Badge>
               </motion.div>
 
               <motion.div custom={1} variants={fadeUp} initial="hidden" animate="show">
-                <h1 className={`font-bold leading-[1.12] sm:leading-[1.08] text-foreground ${language === "fr" ? "text-3xl sm:text-5xl lg:text-5xl xl:text-6xl" : "text-3xl sm:text-5xl md:text-5xl lg:text-6xl"}`}>
+                <h1 className="text-3xl font-bold leading-[1.12] text-foreground sm:text-4xl sm:leading-[1.08] lg:text-5xl 2xl:text-6xl">
                   {language === "fr" ? (
                     <>
-                      Vos services administratifs,<br />
-                      <span className="text-primary">plus simples et plus accessibles</span>
-                      <span className="mt-2.5 sm:mt-4 block text-base sm:text-xl md:text-2xl font-normal leading-relaxed text-muted-foreground">
-                        Un accompagnement clair à chaque étape de votre démarche
-                      </span>
+                      Vos démarches,<br />
+                      <span className="text-primary">plus simples.</span>
                     </>
                   ) : (
                     <>
-                      <span className="text-primary">{language === "ar" ? "خدماتك الإدارية" : "الخدمات الإدارية ديالك"}</span><br />
-                      {language === "ar" ? "أبسط وأسهل وصولاً" : "أبسط وأسهل ليك"}<br />
-                      <span className="mt-2 sm:mt-3 block text-lg sm:text-2xl md:text-3xl font-normal leading-relaxed text-muted-foreground">
-                        {language === "ar" ? "مواكبة واضحة في كل مرحلة من إجراءاتك" : "مواكبة واضحة فكل مرحلة من الإجراءات ديالك"}
-                      </span>
+                      <span className="text-primary">{language === "ar" ? "إجراءاتك الإدارية" : "الإجراءات ديالك"}</span><br />
+                      {language === "ar" ? "أبسط وأوضح" : "أسهل وأوضح"}
                     </>
                   )}
                 </h1>
+                <p className="mt-2.5 text-base leading-snug text-muted-foreground sm:mt-3 sm:text-lg lg:text-xl">
+                  {language === "fr" ? "Un accompagnement clair à chaque étape." : language === "ar" ? "مواكبة واضحة في كل خطوة." : "مواكبة واضحة فكل خطوة."}
+                </p>
               </motion.div>
 
               <motion.p
                 custom={2} variants={fadeUp} initial="hidden" animate="show"
-                className="mt-3.5 sm:mt-5 max-w-2xl text-sm sm:text-base lg:text-lg leading-relaxed text-muted-foreground"
+                className="mt-3.5 max-w-xl text-sm leading-relaxed text-muted-foreground sm:mt-4 sm:text-base"
               >
                 {language === "fr"
-                  ? "OmniAgent simplifie votre parcours administratif en vous guidant de la recherche d’information jusqu’à la préparation de votre dossier. Comprenez les démarches, organisez vos documents, vérifiez les éléments importants et accédez plus facilement au service adapté à votre situation."
+                  ? "Trouvez la bonne démarche, préparez vos documents et suivez votre dossier avec OmniAgent."
                   : language === "ar"
-                  ? "يسهّل OmniAgent مسارك الإداري، من البحث عن المعلومات إلى إعداد ملفك. تعرّف على الإجراءات، ونظّم وثائقك، وتحقّق من العناصر المهمة، واعثر بسهولة أكبر على الخدمة المناسبة لوضعك."
-                  : "OmniAgent كيسهّل عليك المسار الإداري ديالك، من البحث على المعلومات حتى لوجد الملف ديالك. فهم الإجراءات، نظم الوثائق ديالك، تأكد من المعلومات المهمة، ووصل بسهولة أكثر للخدمة اللي مناسبة للحالة ديالك."}
+                  ? "اعثر على الإجراء المناسب، جهّز وثائقك، وتابع ملفك مع OmniAgent."
+                  : "لقى الإجراء المناسب، وجد الوثائق ديالك، وتبع الملف ديالك مع OmniAgent."}
               </motion.p>
 
               <motion.div
                 custom={3} variants={fadeUp} initial="hidden" animate="show"
-                className={`mt-6 sm:mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4 ${isRtl ? "sm:justify-start" : "sm:justify-start"}`}
+                className="mt-5 flex flex-col gap-3 sm:mt-6 sm:flex-row sm:flex-wrap sm:gap-4"
               >
                 <Button size="lg" asChild className="h-11 sm:h-12 w-full gap-2 px-5 sm:px-8 text-sm sm:text-base shadow-md sm:w-auto">
                   <Link href="/signup">
@@ -96,7 +93,7 @@ export default function Home() {
               {/* Trust micro-badges */}
               <motion.div
                 custom={4} variants={fadeUp} initial="hidden" animate="show"
-                className={`mt-6 sm:mt-8 flex flex-wrap gap-2 sm:gap-3 ${isRtl ? "justify-start" : "justify-start"}`}
+                className="mt-5 flex flex-wrap gap-2 sm:mt-6 sm:gap-3"
               >
                 {[
                   { icon: MapPin, label: language === "fr" ? "Service 100% Marocain" : language === "ar" ? "خدمة مغربية 100٪" : "خدمة مغربية 100٪" },

@@ -65,7 +65,7 @@ export function AppLayout({ children, fullHeight = false, fullBleed = false, cla
   };
 
   return (
-    <div className={`w-full max-w-full overflow-x-hidden bg-background ${fullHeight ? "h-dvh overflow-hidden" : "min-h-dvh"} ${className}`} dir={isRtl ? "rtl" : "ltr"}>
+    <div className={`w-full max-w-full bg-background ${fullHeight ? "h-dvh overflow-hidden" : "min-h-dvh overflow-x-clip"} ${className}`} dir={isRtl ? "rtl" : "ltr"}>
       <Header
         navigation={navigation}
         currentUser={currentUser}
