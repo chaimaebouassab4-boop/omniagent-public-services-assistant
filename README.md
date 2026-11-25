@@ -332,8 +332,8 @@ npm run build
 
 | Contributor | Role | Key Contributions |
 |-------------|------|-------------------|
-| **👨‍💼 Ayoub** | **Data / AI / Knowledge Engineering** | • Designed & implemented the RAG architecture with Chroma & LlamaIndex<br>• Engineered the Google Gemini Multimodal Vision OCR pipeline<br>• Curated the trilingual Knowledge Base and legal compliance rules<br>• Fine-tuned conversational system prompts for natural citizen interaction<br>• Developed AI evaluation metrics and benchmark datasets |
-| **👩‍💻 Chaimae** | **Software / Full-Stack Engineering** | • Architected the FastAPI backend REST services and SQLAlchemy models<br>• Developed the interactive React/Tailwind chat UI, RTL support & dashboard<br>• Implemented staged document upload with real-time preview and cancellation<br>• Built the case lifecycle state machine, audit logs, and in-browser previewer<br>• Configured Docker orchestration, JWT auth security, and automated tests |
+| **👨‍💼 Ayoub El Ouardi** | **Data / AI / Knowledge Engineering** | • Designed & implemented the RAG architecture with Chroma & LlamaIndex<br>• Engineered the Google Gemini Multimodal Vision OCR pipeline<br>• Curated the trilingual Knowledge Base and legal compliance rules<br>• Fine-tuned conversational system prompts for natural citizen interaction<br>• Developed AI evaluation metrics and benchmark datasets |
+| **👩‍💻 Chaimae Bouassab** | **Software / Full-Stack Engineering** | • Architected the FastAPI backend REST services and SQLAlchemy models<br>• Developed the interactive React/Tailwind chat UI, RTL support & dashboard<br>• Implemented staged document upload with real-time preview and cancellation<br>• Built the case lifecycle state machine, audit logs, and in-browser previewer<br>• Configured Docker orchestration, JWT auth security, and automated tests |
 
 ---
 
