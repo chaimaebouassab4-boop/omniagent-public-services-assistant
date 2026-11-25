@@ -1,33 +1,38 @@
 # 🇲🇦 OmniAgent — Moroccan Public Services AI Assistant
 ### مساعد الخدمات الإدارية العمومية الذكي بالمملكة المغربية
 
-[![Tests](https://img.shields.io/badge/tests-36%2F36%20passing-brightgreen.svg)](#-testing--quality-assurance)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18.3-61DAFB.svg)](https://react.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-38B2AC.svg)](https://tailwindcss.com/)
-[![Gemini](https://img.shields.io/badge/Gemini_Vision-Multimodal_OCR-8E75B2.svg)](https://ai.google.dev/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)
+**Find the right administrative procedure, prepare your documents, and track your case in one place.**
 
----
+OmniAgent is a GovTech prototype built in Tangier for Moroccan public services. Citizens can ask questions in **Darija, Arabic, or French**, review a document before submitting it for analysis, and follow their case. Public agents can review requests and record decisions in a dedicated dashboard.
+
+[Try the demo locally](#-quick-start-guide) · [See how it works](#citizen-journey) · [Explore the architecture](#-system-architecture) · [Meet the team](#-team--responsibilities)
+
+`React` · `FastAPI` · `Gemini Vision` · `ChromaDB` · `Docker`
+
+## Citizen journey
+
+> **Example** · « Quelles pièces dois-je préparer pour demander un certificat de résidence ? »
+
+```mermaid
+flowchart TD
+    Q["Ask about a procedure"] --> G["Get guidance and source references"]
+    G --> D{"Need help checking a document?"}
+    D -->|Yes| U["Preview the file and confirm upload"]
+    U --> O["Review OCR findings and possible issues"]
+    D -->|No| C["Submit a case in OmniAgent"]
+    O --> C
+    C --> T["Track its status using the case reference"]
+```
+
+The case workflow runs inside OmniAgent. The institutional roadmap below covers future integrations with public administrations.
 
 ## 📖 Overview
 
-**OmniAgent** is an intelligent, trilingual GovTech AI assistant and digital case management platform built specifically for Moroccan public administration. It bridges the gap between citizens and public services by transforming complex administrative regulations into simple, accessible, and conversational guidance.
+OmniAgent brings together a **catalog of 10 procedures**, **source-grounded chat**, **document pre-checks**, and **case tracking**. Its interface switches between right-to-left and left-to-right layouts.
 
-### Schéma de valeur, gouvernance et déploiement
-
-**OmniAgent — Solution GovTech d’assistance citoyenne pour les services administratifs marocains.** Une plateforme pensée pour accompagner les citoyens en darija, en arabe et en français, faciliter la préparation et le suivi des dossiers, et aider les agents publics à traiter les demandes.
-
-[![Schéma OmniAgent : bénéficiaires, assistance multilingue, sources officielles, pré-validation documentaire OCR, suivi des dossiers, gouvernance et déploiement progressif](docs/diagrams/omniagent-valeur-gouvernance-deploiement.png)](docs/diagrams/omniagent-valeur-gouvernance-deploiement.png)
-
-Ce schéma présente la vision du projet : collaboration avec les institutions, protection des données, sécurité et déploiement progressif, de la démonstration publique au pilote institutionnel puis à une infrastructure souveraine. Les partenariats, engagements de conformité et étapes de déploiement présentés constituent des objectifs à valider au fil du projet.
-
-*Simplifier aujourd’hui, un service public plus proche demain.*
-
-### 🌐 True Trilingual Experience
-OmniAgent natively understands and responds across three linguistic spectrums with full **RTL / LTR layout switching**:
-* **Moroccan Darija (`دارجة مغربية`)** — Conversational, phonetic, and authentic phrasing understood by all citizens.
+### 🌐 Languages
+OmniAgent natively supports three languages with **RTL / LTR layout switching**:
+* **Moroccan Darija (`دارجة مغربية`)** — Everyday Moroccan phrasing for conversational guidance.
 * **Modern Standard Arabic (`العربية الفصحى`)** — Official administrative and legal terminology.
 * **French (`Français`)** — Standard administrative and technical documentation language.
 
@@ -35,17 +40,17 @@ OmniAgent natively understands and responds across three linguistic spectrums wi
 
 ## 🌟 Advanced Features & Capabilities
 
-### 1. 🔬 Smart Multimodal Document Analyzer (Vision OCR & Legal Compliance)
+### 1. 🔬 Document pre-checks and multimodal OCR
 An advanced document intelligence engine designed specifically around **Moroccan administrative standards and legal formalities**:
 
 * **Two-Tier Extraction Pipeline**:
-  * **Fast-Path Digital PDF Extraction**: Directly parses selectable text from digital PDFs via `pypdf` with zero external API latency.
-  * **Multimodal Vision OCR**: Automatically routes scanned PDFs and mobile camera images (`JPEG`, `PNG`, `WebP`) to **Google Gemini Multimodal Vision API**, accurately extracting bilingual Arabic and French text, seals, signatures, and handwritten notes.
+  * **Fast-Path Digital PDF Extraction**: Directly parses selectable text from digital PDFs via `pypdf` without calling the OCR API.
+  * **Multimodal Vision OCR**: Automatically routes scanned PDFs and mobile camera images (`JPEG`, `PNG`, `WebP`) to **Google Gemini Multimodal Vision API**, to extract Arabic and French text and identify visible elements such as stamps, signatures, and handwritten notes.
 * **Moroccan Legal & Administrative Rules Engine**:
-  * **3-Month Legal Validity Rule**: Validates whether the document respects the Moroccan administrative 3-month recency requirement.
+  * **Document recency**: Flags potential issues against configured rules, including a three-month threshold where applicable.
   * **Date Anomaly Detector**: Flags expired documents, obsolete fiscal years, or future-dated certificates.
-  * **Stamp & Signature Verification**: Checks for official wet stamps (*cachet humide*), signers, delegating authorities, and QR verification codes.
-  * **Official Language Compliance**: Checks for Arabic/French status and alerts citizens if an English or foreign certificate requires a certified sworn translation (*traduction assermentée près les tribunaux marocains*).
+  * **Stamps and signatures**: Flags the apparent presence or absence of visible elements such as stamps, signatures, and QR codes.
+  * **Official Language Compliance**: Checks for Arabic/French status and flags when a foreign-language certificate may require a sworn translation (*traduction assermentée près les tribunaux marocains*).
 * **Interactive Staged Attachment Workflow (No Auto-Send)**:
   * Uploading a file displays a preview card with file icon, filename, formatted file size, and instant removal (`✕`).
   * Files are **never auto-sent without confirmation**.
@@ -61,10 +66,10 @@ An advanced document intelligence engine designed specifically around **Moroccan
 
 ---
 
-### 2. 🏛️ Full Catalog of 10 Moroccan Public Services
+### 2. 🏛️ Catalog of 10 Moroccan public services
 OmniAgent covers 10 administrative services spanning civil status, family, property, administrative, and justice:
 
-| # | Service (Français) | الخدمة (العربية) | Catégorie | Délai moyen | Documents requis essentiels |
+| # | Service (Français) | الخدمة (العربية) | Catégorie | Délai indicatif | Exemples de pièces |
 |---|-------------------|-----------------|-----------|-------------|----------------------------|
 | 1 | **Certificat de résidence** | شهادة السكنى | État Civil | 2 jours | CIN, Justificatif de domicile (eau/électricité/bail) |
 | 2 | **Extrait d'acte de naissance** | رسم الولادة / عقد الازدياد | État Civil | 1 jour | Livret de famille ou CIN des parents |
@@ -77,7 +82,9 @@ OmniAgent covers 10 administrative services spanning civil status, family, prope
 | 9 | **Certificat de bonne conduite** | شهادة حسن السيرة | Justice | 2 jours | Fiche anthropométrique (DGSN), CIN |
 | 10 | **Casier judiciaire** | السجل العدلي | Justice | 2 jours | Fiche de demande, Copie intégrale de naissance, CIN |
 
-* **Multilingual Routing Dictionary**: Over 50+ keyword patterns in Darija, Arabic, and French auto-route queries to their exact administrative domain.
+Check the relevant administration’s current instructions for exact documents and processing times.
+
+* **Multilingual Routing Dictionary**: Over 50 keyword patterns in Darija, Arabic, and French auto-route queries to their exact administrative domain.
 
 ---
 
@@ -85,16 +92,16 @@ OmniAgent covers 10 administrative services spanning civil status, family, prope
 * **Multi-Session Management**: Create, switch, list, and delete independent conversation threads with automatic title generation.
 * **Hybrid Knowledge Retrieval**:
   * Vector similarity search with **Chroma DB** and embeddings.
-  * Curated JSON knowledge bases with grounding rules to eliminate hallucinations.
+  * Curated JSON knowledge bases with grounding rules to reduce unsupported answers.
   * Deterministic fallback engine for high availability even when vector stores are offline.
-* **Transparent Citations & Confidence Badges**: Displays confidence scores (e.g., `Confiance: 95%`) and source citations on assistant responses.
+* **Transparent Citations & Confidence Badges**: Displays confidence indicators and source references alongside assistant responses.
 
 ---
 
 ### 4. 📁 Digital Case Lifecycle & Citizen Portal
 * **Automated Case Generation**: Assigns reference tracking codes (`OMN-XXXXX`).
 * **Interactive State Machine**: Full lifecycle tracking: `submitted` ➔ `processing` ➔ `approved` / `rejected`.
-* **Visual Action Timeline**: Immutable audit trail logging every submission, document upload, status change, and administrative review.
+* **Visual Action Timeline**: Audit trail recording every submission, document upload, status change, and administrative review.
 * **In-App Document Viewer**: Secure inline preview and download of attached case documents.
 
 ---
@@ -152,17 +159,15 @@ flowchart TB
     RAGService --> VectorDB
 ```
 
-### Document OCR & Compliance Pipeline
+### Document OCR pipeline
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor Citizen as Citizen (Frontend)
     participant ChatUI as Chat Input & Preview
     participant API as FastAPI (/api/chat/documents)
     participant Analyzer as Document Analyzer
     participant Gemini as Google Gemini Vision
-    participant DB as Database (Audit & Messages)
 
     Citizen->>ChatUI: Selects Document (PDF / Image)
     ChatUI-->>Citizen: Renders Staged Preview Card (No auto-send)
@@ -176,11 +181,10 @@ sequenceDiagram
         Analyzer->>Gemini: Multimodal Vision OCR (Raw extraction)
         Gemini-->>Analyzer: Extracted Text (Arabic + French)
     end
-    Analyzer->>Gemini: Verify Moroccan Legal Compliance & Answer Citizen Query
+    Analyzer->>Gemini: Review extracted text and answer the citizen’s question
     Gemini-->>Analyzer: Structured Conversational Breakdown
     Analyzer-->>API: DocumentAnalysis Object
-    API->>DB: Store raw text as hidden 'document_context'
-    API->>DB: Store visible user message & formatted assistant reply
+    API->>API: Save the conversation and document context
     API-->>ChatUI: Formatted Markdown Response + OCR Badge
     ChatUI-->>Citizen: Renders Markdown, Badges & Guidance
 ```
@@ -205,7 +209,7 @@ sequenceDiagram
 * **pypdf & PyMuPDF (fitz)** — PDF parsing, validation, and rasterization
 
 ### AI, Machine Learning & OCR
-* **Google Generative AI (Gemini 1.5/2.0 Flash)** — Multimodal OCR & document verification
+* **Google Gemini** — Multimodal OCR & document verification
 * **LlamaIndex** — Vector index orchestration & RAG retrieval
 * **Chroma DB** — Local vector database for semantic document indexing
 * **HuggingFace Embeddings** — Multilingual sentence representations
@@ -259,10 +263,10 @@ ADMIN_PASSWORD=admin123
 
 # Vision OCR & Multimodal Analysis
 GOOGLE_API_KEY=your-gemini-api-key-here
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=your-enabled-gemini-model
 ```
 
-Start the FastAPI backend:
+Set `GEMINI_MODEL` to a model available for your API key, then start the FastAPI backend:
 ```bash
 uvicorn main:app --reload --port 8000
 ```
@@ -292,7 +296,9 @@ docker compose -f docker/docker-compose.yml up --build -d
 
 ---
 
-## 🔑 Default Credentials
+## 🔑 Local demo credentials
+
+The example credentials below apply to local development. Set unique credentials and a strong JWT secret for any deployed instance.
 
 | Role | Email | Password | Access |
 |------|-------|----------|--------|
@@ -303,7 +309,7 @@ docker compose -f docker/docker-compose.yml up --build -d
 
 ## 🧪 Testing & Quality Assurance
 
-The backend features an automated test suite verifying all critical API surfaces:
+The backend test suite covers:
 * Authentication & JWT security
 * Citizen case submissions and state machine transitions
 * Standalone multi-session chat isolation
@@ -311,13 +317,13 @@ The backend features an automated test suite verifying all critical API surfaces
 * Multimodal chat document OCR integration
 * Admin analytics and role-based permissions
 
-Run the test suite:
+Run the test suite from the repository root:
 ```bash
 python -m pytest tests/backend/test_api.py -v
 ```
 
 ```
-====================== 36 passed, 364 warnings in 3.19s =======================
+36 passed, 364 warnings (recorded run)
 ```
 
 To verify the frontend build:
@@ -337,15 +343,38 @@ npm run build
 
 ---
 
+## Governance and deployment
+
+The prototype demonstrates citizen assistance and case management. The following diagram describes the **intended operating model** for an institutional deployment.
+
+```mermaid
+flowchart TD
+    E["Project team · future technology company"] -->|Builds and maintains| O["OmniAgent"]
+    I["Public administrations · business and IT teams"] <-->|Pilot and integration| O
+    S["Data protection · access controls · audit"] -->|Guides deployment| O
+    O -->|Guides and helps prepare cases| C["Citizens"]
+    O -->|Supports review and follow-up| A["Public agents"]
+```
+
+| Proposed phase | Purpose | Hosting option |
+| --- | --- | --- |
+| Public demo | Validate the citizen journey using demonstration data | Vercel with Railway or Render |
+| Institutional pilot | Test selected procedures and review outcomes with a partner | National cloud or a controlled environment |
+| Production for sensitive use cases | Deploy approved workflows under institutional requirements | On-premises or sovereign infrastructure |
+
+The governance plan includes privacy and administrative simplification considerations (Moroccan laws 09-08 and 55-19), access controls, auditability, and managed integration with institutional systems. Partnerships, hosting choices, and compliance milestones are subject to validation.
+
+**Expected outcomes** include clearer guidance, fewer repeat visits, better-prepared cases, and more accessible services.
+
 ## 🗺️ Roadmap
 
 - [x] Full support for 10 Moroccan public services
 - [x] Gemini Multimodal Vision OCR with bilingual Arabic/French extraction
-- [x] Moroccan legal compliance verification (3-month rule, stamps, sworn translations)
+- [x] Document pre-checks for recency, visible stamps, and possible translation requirements
 - [x] Staged attachment workflow with co-prompting (no auto-upload)
 - [x] Multi-session chat with persistent history & topic management
 - [ ] Official WhatsApp & Telegram citizen gateways
-- [ ] Voice input & speech synthesis for illiterate citizens in Moroccan Darija
+- [ ] Voice input & speech synthesis for citizens who prefer voice interaction in Moroccan Darija
 - [ ] Direct integration with Morocco National Digital ID (CNIE / Portal Idara)
 - [ ] End-to-end cloud deployment on Azure / AWS with managed PostgreSQL
 
